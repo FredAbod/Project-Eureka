@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: whatsappai-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: whatsappai
+    volumes:
+      - mongodb_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    networks:
+      - whatsapp-network
+
+  # Uncomment this section if you want to run the app in Docker too
+  # whatsapp-api:
+  #   build: .
+  #   container_name: whatsappai-app
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   environment:
+  #     MONGODB_URI: mongodb://root:password123@mongodb:27017/whatsappai?authSource=admin
+  #   depends_on:
+  #     - mongodb
+  #   networks:
+  #     - whatsapp-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  whatsapp-network:
+    driver: bridge

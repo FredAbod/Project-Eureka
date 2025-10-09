@@ -1,0 +1,35 @@
+{
+  "name": "whatsappai",
+  "version": "1.0.0",
+  "description": "Prototype WhatsApp banking webhook + orchestrator (mocked connectors)",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js",
+    "test": "node ./tests/smoke.js || true",
+    "test:mongodb": "node ./tests/mongodb-test.js",
+    "mongodb:start": "docker-compose up -d mongodb",
+    "mongodb:stop": "docker-compose down",
+    "mongodb:logs": "docker-compose logs -f mongodb",
+    "ngrok:authtoken": "npx ngrok authtoken",
+    "ngrok": "npx ngrok http 3000",
+    "tunnel": "npx localtunnel --port 3000"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^16.0.0",
+    "express": "^4.18.2",
+    "express-rate-limit": "^7.1.5",
+    "helmet": "^7.1.0",
+    "mongoose": "^8.19.0",
+    "ngrok": "^5.0.0-beta.2",
+    "node-fetch": "^3.3.2",
+    "validator": "^13.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^2.0.22"
+  }
+}

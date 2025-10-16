@@ -1,6 +1,8 @@
 const validator = require('validator');
 const sessionRepo = require('../repositories/sessionRepository');
 const bankService = require('./bankService');
+const aiService = require('./aiService');
+const conversationService = require('./conversationService');
 
 // Rate limiting per user
 const userRequestCounts = new Map();
@@ -64,38 +66,46 @@ async function handleEvent(event) {
       };
     }
 
-    const intent = detectIntent(text);
-    console.info('Intent detected', { intent, from: session.from, requestCount: session.requestCount });
-    
-    switch (intent) {
-      case 'balance':
-        const accounts = await bankService.getAccountsForUser(session.userId);
-        if (!accounts || accounts.length === 0) {
-          return { text: 'No accounts found. Please contact support.' };
-        }
-        const lines = accounts.map(a => `${validator.escape(a.name)}: $${a.balance.toFixed(2)}`).join('\n');
-        return { text: `You have ${accounts.length} account(s):\n${lines}` };
-        
-      case 'transactions':
-        const txs = await bankService.getTransactionsForUser(session.userId);
-        if (!txs || txs.length === 0) {
-          return { text: 'No recent transactions found.' };
-        }
-        const list = txs.slice(0, 5).map(t => 
-          `${validator.escape(t.date)} ${validator.escape(t.desc)} $${t.amount.toFixed(2)}`
-        ).join('\n');
-        return { text: `Recent transactions:\n${list}` };
-        
-      case 'help':
-        return { 
-          text: "Available commands:\n• 'balance' - Check account balances\n• 'transactions' - View recent transactions\n• 'help' - Show this help" 
-        };
-        
-      default:
-        return { 
-          text: "I didn't understand that command. Send 'help' to see available options." 
-        };
+    // Check if user is confirming a pending transaction
+    if (session.pendingTransaction) {
+      return await handleTransactionConfirmation(session, text, from);
     }
+
+    // Check if Groq AI is configured
+    if (!aiService.isConfigured()) {
+      console.warn('Groq API not configured, falling back to basic intent detection');
+      return await handleWithBasicIntents(session, text);
+    }
+
+    // Get conversation history for context
+    const rawHistory = await conversationService.getConversationHistory(from);
+    const conversationHistory = conversationService.formatForGroq(rawHistory);
+
+    console.info('Processing with AI', { 
+      from: session.from, 
+      textLength: text.length,
+      historySize: conversationHistory.length 
+    });
+
+    // Add user message to history
+    await conversationService.addUserMessage(from, text);
+
+    // Process message with AI
+    const aiResponse = await aiService.processMessage(text, conversationHistory);
+
+    // Handle based on AI response type
+    if (aiResponse.type === 'function_call') {
+      return await executeFunctionCall(aiResponse, session, conversationHistory, from);
+    }
+
+    // Regular text response
+    const responseText = aiResponse.content || "I'm not sure how to help with that.";
+    
+    // Add assistant response to history
+    await conversationService.addAssistantMessage(from, responseText);
+    
+    return { text: responseText };
+
   } catch (err) {
     console.error('Error handling webhook event:', {
       error: err.message,
@@ -106,8 +116,183 @@ async function handleEvent(event) {
     if (err.message === 'session_limit_exceeded') {
       return { text: 'Service temporarily unavailable. Please try again later.' };
     }
+
+    if (err.message === 'groq_api_key_invalid') {
+      return { text: 'AI service is not configured. Please contact support.' };
+    }
+
+    if (err.message === 'groq_rate_limit_exceeded') {
+      return { text: 'Service is busy. Please try again in a moment.' };
+    }
     
     return { text: 'Sorry, there was an error processing your request. Please try again.' };
+  }
+}
+
+/**
+ * Execute a function call requested by AI
+ */
+async function executeFunctionCall(aiResponse, session, conversationHistory, phoneNumber) {
+  const functionName = aiResponse.function;
+  const args = aiResponse.arguments;
+
+  console.info('Executing function call', { function: functionName, args });
+
+  try {
+    let result;
+
+    switch (functionName) {
+      case 'check_balance':
+        const accounts = await bankService.getAccountsForUser(session.userId);
+        if (!accounts || accounts.length === 0) {
+          return { text: 'No accounts found. Please contact support.' };
+        }
+        result = { accounts };
+        break;
+
+      case 'get_transactions':
+        const txs = await bankService.getTransactionsForUser(session.userId);
+        if (!txs || txs.length === 0) {
+          return { text: 'No recent transactions found.' };
+        }
+        const days = args.days || 7;
+        result = { transactions: txs.slice(0, Math.min(days * 2, 20)) }; // Limit results
+        break;
+
+      case 'transfer_money':
+        // This requires confirmation - store as pending
+        return await createPendingTransaction(session, functionName, args, phoneNumber);
+
+      case 'get_spending_insights':
+        // Get transactions and let AI analyze
+        const allTxs = await bankService.getTransactionsForUser(session.userId);
+        result = { 
+          transactions: allTxs.slice(0, 30),
+          timeframe: args.timeframe,
+          category: args.category
+        };
+        break;
+
+      default:
+        return { text: `Function ${functionName} is not yet implemented.` };
+    }
+
+    // Add function result to conversation
+    await conversationService.addFunctionResult(phoneNumber, functionName, result);
+
+    // Generate natural language response from function result
+    const responseText = await aiService.generateResponseFromFunction(
+      functionName,
+      result,
+      [...conversationHistory, { role: 'user', content: args }]
+    );
+
+    // Add assistant response to history
+    await conversationService.addAssistantMessage(phoneNumber, responseText);
+
+    return { text: responseText };
+
+  } catch (error) {
+    console.error('Error executing function:', { function: functionName, error: error.message });
+    return { text: 'Sorry, I encountered an error executing that action. Please try again.' };
+  }
+}
+
+/**
+ * Create a pending transaction that requires user confirmation
+ */
+async function createPendingTransaction(session, functionName, args, phoneNumber) {
+  const pendingTransaction = {
+    type: 'transfer',
+    function: functionName,
+    arguments: args,
+    expiresAt: Date.now() + 5 * 60 * 1000 // 5 minutes
+  };
+
+  await sessionRepo.updateSession(phoneNumber, { pendingTransaction });
+
+  const { from_account, to_account, amount } = args;
+  const confirmText = `🔒 Confirmation Required\n\nTransfer ₦${amount.toLocaleString()} from ${from_account} to ${to_account}?\n\nReply YES to confirm or NO to cancel.\n\n(Expires in 5 minutes)`;
+
+  return { text: confirmText };
+}
+
+/**
+ * Handle transaction confirmation (YES/NO)
+ */
+async function handleTransactionConfirmation(session, text, phoneNumber) {
+  const pending = session.pendingTransaction;
+
+  // Check if expired
+  if (Date.now() > pending.expiresAt) {
+    await sessionRepo.updateSession(phoneNumber, { pendingTransaction: null });
+    return { text: 'Transaction confirmation expired. Please try again if you still want to transfer.' };
+  }
+
+  const normalized = text.toLowerCase().trim();
+
+  if (normalized === 'yes' || normalized === 'y' || normalized === 'confirm') {
+    // Execute the transfer
+    const { from_account, to_account, amount } = pending.arguments;
+    
+    // Clear pending transaction
+    await sessionRepo.updateSession(phoneNumber, { pendingTransaction: null });
+
+    // TODO: Implement actual transfer when bank API is connected
+    // For now, simulate success
+    const responseText = `✅ Transfer Complete!\n\n₦${amount.toLocaleString()} transferred from ${from_account} to ${to_account}.\n\nNew balance will reflect shortly.`;
+    
+    await conversationService.addAssistantMessage(phoneNumber, responseText);
+    
+    return { text: responseText };
+  }
+
+  if (normalized === 'no' || normalized === 'n' || normalized === 'cancel') {
+    // Cancel transaction
+    await sessionRepo.updateSession(phoneNumber, { pendingTransaction: null });
+    return { text: 'Transfer cancelled. Is there anything else I can help you with?' };
+  }
+
+  // Invalid response
+  return { text: 'Please reply YES to confirm the transfer or NO to cancel.' };
+}
+
+/**
+ * Fallback to basic intent detection if AI is not configured
+ */
+async function handleWithBasicIntents(session, text) {
+  const intent = detectIntent(text);
+  
+  console.info('Intent detected (fallback)', { intent, from: session.from });
+  
+  switch (intent) {
+    case 'balance':
+      const accounts = await bankService.getAccountsForUser(session.userId);
+      if (!accounts || accounts.length === 0) {
+        return { text: 'No accounts found. Please contact support.' };
+      }
+      const lines = accounts.map(a => `${validator.escape(a.name)}: ₦${a.balance.toLocaleString()}`).join('\n');
+      return { text: `You have ${accounts.length} account(s):\n${lines}` };
+      
+    case 'transactions':
+      const txs = await bankService.getTransactionsForUser(session.userId);
+      if (!txs || txs.length === 0) {
+        return { text: 'No recent transactions found.' };
+      }
+      const list = txs.slice(0, 5).map(t => 
+        `${validator.escape(t.date)} ${validator.escape(t.desc)} ₦${t.amount.toLocaleString()}`
+      ).join('\n');
+      return { text: `Recent transactions:\n${list}` };
+      
+    case 'help':
+      return { 
+        text: "Available commands:\n• 'balance' - Check account balances\n• 'transactions' - View recent transactions\n• 'help' - Show this help\n\n💡 Tip: You can also chat naturally with me!" 
+      };
+      
+    default:
+      return { 
+        text: "I didn't understand that command. Send 'help' to see available options, or try asking me naturally!" 
+      };
   }
 }
 

@@ -29,6 +29,28 @@ const sessionSchema = new mongoose.Schema({
   metadata: {
     type: mongoose.Schema.Types.Mixed,
     default: {}
+  },
+  conversationHistory: {
+    type: [{
+      role: {
+        type: String,
+        enum: ['user', 'assistant', 'system', 'function'],
+        required: true
+      },
+      content: {
+        type: String,
+        required: true
+      },
+      timestamp: {
+        type: Number,
+        default: Date.now
+      }
+    }],
+    default: []
+  },
+  pendingTransaction: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
   }
 }, {
   timestamps: true

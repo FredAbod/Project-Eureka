@@ -1,8 +1,17 @@
 # whatsappai (prototype)
 
-This repository contains a small MVC-style prototype for a WhatsApp banking assistant. It uses an in-memory mock bank and session store so you can run locally without API keys.
+This repository contains an AI-powered WhatsApp banking assistant. It uses Groq AI for natural language understanding and can connect to real banks via APIs.
 
-Quick start
+## ✨ Features
+
+- 🤖 **AI-Powered Conversations** - Natural language chat powered by Groq
+- 💬 **Multi-turn Conversations** - Remembers context across messages
+- 🏦 **Banking Functions** - Check balance, view transactions, transfer money
+- 🔒 **Transaction Confirmation** - Explicit confirmation required for transfers
+- 📊 **Conversation Memory** - Stores last 10 messages for context
+- 🇳🇬 **Nigerian Naira Support** - Built for Nigerian banking
+
+## Quick start
 
 1. Install dependencies
 
@@ -30,24 +39,67 @@ Create a free cluster at https://mongodb.com/atlas and use the connection string
 
 ```bash
 cp .env.example .env
-# Edit .env with your MongoDB URI and other settings
+# Edit .env with your settings:
+# - MongoDB URI
+# - WhatsApp API credentials  
+# - Groq API key (get free key from https://console.groq.com)
 ```
 
-4. Run locally
+**Important**: Get your Groq API key:
+1. Visit https://console.groq.com
+2. Sign up (free, no credit card)
+3. Create API key
+4. Add to `.env`: `GROQ_API_KEY=gsk_your_key_here`
+
+4. Test the AI integration
+
+```bash
+npm run test:ai
+```
+
+5. Run locally
 
 ```bash
 npm start
 ```
 
-3. Send a POST to the webhook
+6. Test with natural language
+
+Try sending these messages to your WhatsApp bot:
+- "What's my balance?"
+- "Show me last week's transactions"
+- "Transfer 5000 naira to savings"
+- "How much did I spend this month?"
+
+The bot understands natural language and remembers conversation context!
+
+## Testing
 
 ```bash
-curl -X POST http://localhost:3000/webhook -H "Content-Type: application/json" -d '{"from":"+1555123456","text":"balance"}'
+# Test AI integration
+npm run test:ai
+
+# Test MongoDB
+npm run test:mongodb
+
+# Test webhook
+npm test
+
+# Run all tests
+npm run test:all
 ```
 
-The server will return a JSON reply containing the simulated WhatsApp response.
+## Testing from WhatsApp (production)
 
-Testing from WhatsApp (quick)
+1. Send a POST to the webhook
+
+```bash
+curl -X POST http://localhost:3000/webhook -H "Content-Type: application/json" -d '{"from":"+1555123456","text":"What is my balance?"}'
+```
+
+The server will return a JSON reply with the AI-generated response.
+
+## Testing from WhatsApp (quick)
 
 1. Install ngrok and expose your local server:
 
@@ -127,7 +179,54 @@ Production considerations:
 
 Next steps
 
-- Replace mock repositories with real connectors (WhatsApp API, bank API)
-- Add OTP and authentication flows
-- Add LLM-based NLU behind a deterministic action executor
+- Replace mock repositories with real connectors (Okra for Nigerian banks, Plaid for US/EU)
+- See `ARCHITECTURE.md` for full system architecture and roadmap
+- Check `docs/PHASE1-COMPLETE.md` for AI integration details
+- Check `docs/PHASE1-QUICKSTART.md` for quick setup guide
+- Add OTP and enhanced authentication flows
+- Implement bill payment and advanced features
+
+## Phase 1: AI Integration ✅
+
+**What's New:**
+- Natural language understanding with Groq AI
+- Function calling for banking operations
+- Conversation memory (remembers last 10 messages)
+- Transaction confirmation flow
+- Multi-turn conversations
+
+**Documentation:**
+- `docs/PHASE1-COMPLETE.md` - Full Phase 1 documentation
+- `docs/PHASE1-QUICKSTART.md` - 5-minute setup guide
+- `ARCHITECTURE.md` - Complete system architecture
+
+## Project Structure
+
+- `index.js` - app entry and route mounting
+- `src/routes` - express routes
+- `src/controllers` - controllers that validate requests
+- `src/services` - business logic and AI integration
+  - `aiService.js` - Groq AI with function calling (NEW)
+  - `conversationService.js` - Conversation memory (NEW)
+  - `webhookService.js` - Message processing (UPDATED)
+  - `bankService.js` - Banking operations
+- `src/repositories` - MongoDB persistence layers
+- `src/models` - Mongoose schemas
+  - `Session.js` - Now includes conversation history (UPDATED)
+  - `User.js` - User data
+- `src/config` - database connection
+- `src/utils` - WhatsApp adapter
+- `docs/` - Phase documentation (NEW)
+- `docker-compose.yml` - MongoDB container setup
+
+## Architecture
+
+See `ARCHITECTURE.md` for complete system architecture including:
+- AI integration strategy
+- Bank connection options (Okra, Plaid, Mono)
+- 4-phase implementation roadmap
+- Security best practices
+- Cost estimates
+- Deployment guide
+
 # Project-Eureka

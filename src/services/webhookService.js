@@ -1,8 +1,10 @@
 const validator = require('validator');
 const sessionRepo = require('../repositories/sessionRepository');
+const userRepo = require('../repositories/userRepository');
 const bankService = require('./bankService');
 const aiService = require('./aiService');
 const conversationService = require('./conversationService');
+const accountConnectionService = require('./accountConnectionService');
 
 // Rate limiting per user
 const userRequestCounts = new Map();
@@ -64,6 +66,29 @@ async function handleEvent(event) {
       return { 
         text: 'You\'re sending messages too quickly. Please wait a moment before trying again.' 
       };
+    }
+
+    // Get user to check for connection state
+    const user = await userRepo.getUserByPhone(from);
+    
+    // Check if user is in the middle of connecting their account
+    if (user && user.connectionState) {
+      console.info('User in connection flow', { from, step: user.connectionState.step });
+      
+      // Handle cancel command
+      if (text.toLowerCase() === 'cancel' || text.toLowerCase() === 'stop') {
+        const result = await accountConnectionService.cancelConnection(from);
+        return { text: result.message };
+      }
+      
+      // Process the connection input
+      const result = await accountConnectionService.handleConnectionInput(from, text);
+      
+      if (result.message) {
+        return { text: result.message };
+      }
+      
+      // If no message but success, fall through to AI to generate response
     }
 
     // Check if user is confirming a pending transaction
@@ -142,7 +167,36 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
     let result;
 
     switch (functionName) {
+      case 'check_account_status':
+        // Check if user has connected their account
+        const status = await accountConnectionService.getConnectionStatus(phoneNumber);
+        result = {
+          connected: status.connected,
+          message: status.message,
+          accountId: status.accountId || null
+        };
+        break;
+
+      case 'initiate_account_connection':
+        // Start the account connection flow
+        const connectionResult = await accountConnectionService.initiateConnection(phoneNumber);
+        
+        if (connectionResult.success || connectionResult.alreadyConnected) {
+          return { text: connectionResult.message };
+        }
+        
+        result = connectionResult;
+        break;
+
       case 'check_balance':
+        // Check if account is connected first
+        const isConnected = await accountConnectionService.isAccountConnected(phoneNumber);
+        if (!isConnected) {
+          return { 
+            text: '🔒 You need to connect your bank account first.\n\nSay "connect account" to get started!' 
+          };
+        }
+        
         const accounts = await bankService.getAccountsForUser(session.userId);
         if (!accounts || accounts.length === 0) {
           return { text: 'No accounts found. Please contact support.' };
@@ -151,6 +205,13 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
         break;
 
       case 'get_transactions':
+        // Check if account is connected first
+        if (!await accountConnectionService.isAccountConnected(phoneNumber)) {
+          return { 
+            text: '🔒 You need to connect your bank account first.\n\nSay "connect account" to get started!' 
+          };
+        }
+        
         const txs = await bankService.getTransactionsForUser(session.userId);
         if (!txs || txs.length === 0) {
           return { text: 'No recent transactions found.' };
@@ -160,10 +221,24 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
         break;
 
       case 'transfer_money':
+        // Check if account is connected first
+        if (!await accountConnectionService.isAccountConnected(phoneNumber)) {
+          return { 
+            text: '🔒 You need to connect your bank account first.\n\nSay "connect account" to get started!' 
+          };
+        }
+        
         // This requires confirmation - store as pending
         return await createPendingTransaction(session, functionName, args, phoneNumber);
 
       case 'get_spending_insights':
+        // Check if account is connected first
+        if (!await accountConnectionService.isAccountConnected(phoneNumber)) {
+          return { 
+            text: '🔒 You need to connect your bank account first.\n\nSay "connect account" to get started!' 
+          };
+        }
+        
         // Get transactions and let AI analyze
         const allTxs = await bankService.getTransactionsForUser(session.userId);
         result = { 
@@ -180,12 +255,33 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
     // Add function result to conversation
     await conversationService.addFunctionResult(phoneNumber, functionName, result);
 
+    console.info('Generating natural language response from function result', {
+      function: functionName,
+      resultKeys: Object.keys(result || {}),
+      phoneNumber
+    });
+
     // Generate natural language response from function result
+    // Only include args in history if they exist and are not empty
+    const historyWithContext = [...conversationHistory];
+    if (args && Object.keys(args).length > 0) {
+      historyWithContext.push({ 
+        role: 'user', 
+        content: `Function arguments: ${JSON.stringify(args)}` 
+      });
+    }
+
     const responseText = await aiService.generateResponseFromFunction(
       functionName,
       result,
-      [...conversationHistory, { role: 'user', content: args }]
+      historyWithContext
     );
+
+    console.info('Generated response', {
+      function: functionName,
+      responseLength: responseText.length,
+      preview: responseText.substring(0, 50)
+    });
 
     // Add assistant response to history
     await conversationService.addAssistantMessage(phoneNumber, responseText);

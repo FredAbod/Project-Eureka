@@ -11,8 +11,32 @@ const bankingTools = [
   {
     type: 'function',
     function: {
+      name: 'check_account_status',
+      description: 'Check if user has connected their bank account. Call this FIRST before trying any banking operations.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'initiate_account_connection',
+      description: 'Start the process of connecting user\'s bank account. Use this when user wants to connect their account or when they need to connect before using banking features.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
       name: 'check_balance',
-      description: 'Get the current balance of user bank accounts',
+      description: 'Get the current balance of user bank accounts. Only works if account is connected.',
       parameters: {
         type: 'object',
         properties: {
@@ -30,7 +54,7 @@ const bankingTools = [
     type: 'function',
     function: {
       name: 'get_transactions',
-      description: 'Retrieve recent transaction history for an account',
+      description: 'Retrieve recent transaction history for an account. Only works if account is connected.',
       parameters: {
         type: 'object',
         properties: {
@@ -54,7 +78,7 @@ const bankingTools = [
     type: 'function',
     function: {
       name: 'transfer_money',
-      description: 'Transfer money between user accounts (requires confirmation)',
+      description: 'Transfer money between user accounts (requires confirmation). Only works if account is connected.',
       parameters: {
         type: 'object',
         properties: {
@@ -82,7 +106,7 @@ const bankingTools = [
     type: 'function',
     function: {
       name: 'get_spending_insights',
-      description: 'Analyze spending patterns and provide insights',
+      description: 'Analyze spending patterns and provide insights. Only works if account is connected.',
       parameters: {
         type: 'object',
         properties: {
@@ -105,7 +129,22 @@ const bankingTools = [
 // System prompt for the banking assistant
 const SYSTEM_PROMPT = `You are a helpful banking assistant for a Nigerian bank. You help users manage their accounts via WhatsApp.
 
+CRITICAL - Function Calling Rules:
+- NEVER mention function names or function syntax in your responses to users
+- When you need information, call the function directly - functions are INVISIBLE to users
+- NEVER write things like "Let me check" or "<function=...>" - just call functions silently
+- Users only see natural conversation, never technical function calls
+- After getting function results, respond naturally as if you always knew the information
+
+Account Connection Flow:
+- When a NEW user greets you, FIRST call check_account_status silently
+- If status shows "not connected" or "User not found", greet warmly and explain they need to connect
+- If status shows "connected", greet as a returning user
+- Use initiate_account_connection when user wants to connect
+- Be warm, friendly, and conversational!
+
 Your capabilities:
+- Help users connect their bank accounts (first-time setup)
 - Check account balances
 - Show recent transactions
 - Assist with money transfers (requires confirmation)
@@ -113,18 +152,22 @@ Your capabilities:
 - Answer banking questions
 
 Important guidelines:
-- Always be polite, professional, and concise (WhatsApp messages should be brief)
-- For money transfers, ALWAYS confirm the details before proceeding
+- Be polite, professional, warm, and conversational
+- Keep messages brief for WhatsApp (2-4 lines usually)
 - Use Nigerian Naira (₦) for currency
-- If you don't have information, ask the user or suggest they contact support
-- Never make up account balances or transaction data - use the provided functions
-- Keep responses under 300 characters when possible for WhatsApp readability
+- Never make up data - use functions to get real information
+- NEVER mention that you're "calling a function" or "checking"
+- Respond naturally as if you instantly know things
 
-When using functions:
-- check_balance: Get current account balances
-- get_transactions: Show recent transaction history
-- transfer_money: Move money between accounts (REQUIRES USER CONFIRMATION)
-- get_spending_insights: Analyze spending patterns`;
+Example greeting for NEW user (after check_account_status returns not connected):
+"Hi there! 👋 Welcome to [Bank]! I'm your personal banking assistant.
+
+To help you check balances, view transactions, and more, you'll need to connect your bank account first.
+
+Ready to connect?"
+
+Example greeting for RETURNING user (after check_account_status returns connected):
+"Welcome back! 👋 Your account is connected and ready. How can I help you today?"`;
 
 /**
  * Process a user message with Groq AI and determine if function calling is needed
@@ -217,17 +260,23 @@ async function processMessage(userMessage, conversationHistory = []) {
  */
 async function generateResponseFromFunction(functionName, functionResult, conversationHistory = []) {
   try {
+    // Create a system message that includes the function result
+    // This is more compatible with Groq's API than using role: 'function'
+    const functionResultMessage = {
+      role: 'system',
+      content: `Function ${functionName} returned: ${JSON.stringify(functionResult)}\n\nRespond naturally to the user based on this information. Do not mention the function call.`
+    };
+
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
       ...conversationHistory,
-      {
-        role: 'function',
-        name: functionName,
-        content: JSON.stringify(functionResult)
-      }
+      functionResultMessage
     ];
 
-    console.info('Generating response from function result', { function: functionName });
+    console.info('Generating response from function result', { 
+      function: functionName,
+      resultPreview: JSON.stringify(functionResult).substring(0, 100)
+    });
 
     const response = await groq.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
@@ -236,16 +285,44 @@ async function generateResponseFromFunction(functionName, functionResult, conver
       max_tokens: 400
     });
 
-    return response.choices[0].message.content;
+    const generatedResponse = response.choices[0].message.content;
+    console.info('Generated response from function', { 
+      function: functionName,
+      responseLength: generatedResponse.length 
+    });
+
+    return generatedResponse;
 
   } catch (error) {
-    console.error('Error generating response from function:', error);
+    console.error('Error generating response from function:', {
+      function: functionName,
+      error: error.message,
+      status: error.status,
+      result: functionResult
+    });
     
     // Fallback to basic formatting if AI fails
     if (functionName === 'check_balance') {
       const accounts = functionResult.accounts || [];
       const lines = accounts.map(a => `${a.name}: ₦${a.balance.toLocaleString()}`).join('\n');
       return `Your account balances:\n${lines}`;
+    }
+    
+    if (functionName === 'check_account_status') {
+      if (functionResult.connected) {
+        return 'Welcome back! 👋 Your account is connected and ready. How can I help you today?';
+      } else {
+        return 'Hi there! 👋 Welcome!\n\nTo use banking features, you\'ll need to connect your bank account first.\n\nSay "connect account" to get started!';
+      }
+    }
+
+    if (functionName === 'get_transactions') {
+      const txs = functionResult.transactions || [];
+      if (txs.length === 0) return 'No recent transactions found.';
+      const list = txs.slice(0, 5).map(t => 
+        `${t.date} - ${t.desc}: ₦${t.amount.toLocaleString()}`
+      ).join('\n');
+      return `Recent transactions:\n${list}`;
     }
     
     return 'I completed that action successfully.';

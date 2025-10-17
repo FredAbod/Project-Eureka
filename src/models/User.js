@@ -17,6 +17,24 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.Mixed,
     default: {}
   },
+  // Bank account connection status
+  bankAccountConnected: {
+    type: Boolean,
+    default: false
+  },
+  bankAccountId: {
+    type: String,
+    default: null
+  },
+  bankConnectionDate: {
+    type: Date,
+    default: null
+  },
+  // For storing temporary connection state during onboarding
+  connectionState: {
+    type: mongoose.Schema.Types.Mixed,
+    default: null
+  },
   preferences: {
     type: mongoose.Schema.Types.Mixed,
     default: {}

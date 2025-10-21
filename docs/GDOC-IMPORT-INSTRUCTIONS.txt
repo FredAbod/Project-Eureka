@@ -1,0 +1,22 @@
+Google Docs Import / Copy-Paste Instructions
+
+Option A — Quick copy/paste
+1. Open `docs/PROJECT-OVERVIEW-GDOC.md` in your editor.
+2. Select all and copy.
+3. In Google Docs, create a new document and paste — Google Docs will retain headings and bullets.
+
+Option B — Import HTML (preserves formatting)
+1. Open Google Docs → File → Open → Upload
+2. Choose `docs/PROJECT-OVERVIEW-GDOC.html` and upload.
+3. Google Docs will convert the HTML into a doc with headings and lists.
+
+Option C — Upload plain text
+1. Open Google Docs → File → Open → Upload
+2. Choose `docs/PROJECT-OVERVIEW.txt` and upload.
+3. Reformat as needed.
+
+Notes
+- The Markdown file is the most editable and quick to copy; the HTML import preserves exact layout.
+- If you want a Google Drive file created programmatically, provide a Drive API token and I can generate the document for you (requires OAuth/permissions).
+
+Done — pick the option that fits your workflow.

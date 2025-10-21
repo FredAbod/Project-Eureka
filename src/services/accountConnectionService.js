@@ -101,13 +101,22 @@ async function getConnectionStatus(phoneNumber) {
  */
 async function initiateConnection(phoneNumber) {
   try {
-    const user = await userRepository.getUserByPhone(phoneNumber);
-    
+    let user = await userRepository.getUserByPhone(phoneNumber);
+
+    // If user doesn't exist yet, create a minimal user record so the
+    // interactive connection flow can proceed. This is safe for the
+    // prototype/mock environment and keeps conversational flow smooth.
     if (!user) {
-      return {
-        success: false,
-        message: 'User not found. Please contact support.'
-      };
+      try {
+        user = await userRepository.createUser(phoneNumber, {});
+        console.info('Auto-created user for connection flow', { phoneNumber, userId: user.userId });
+      } catch (err) {
+        console.error('Failed to auto-create user during initiateConnection', { phoneNumber, err: err.message });
+        return {
+          success: false,
+          message: 'User not found. Please contact support.'
+        };
+      }
     }
 
     // Check if already connected

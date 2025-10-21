@@ -1,0 +1,133 @@
+Project Overview: WhatsApp Banking Assistant (Project-Eureka)
+
+Date: October 20, 2025
+Prepared for: Product Manager
+Prepared by: Engineering (summary for sharing)
+
+---
+
+High-level summary
+------------------
+Project-Eureka is a prototype WhatsApp-based banking assistant that uses an LLM (Groq/llama) to provide conversational banking features. It supports a natural, guided account connection flow (mocked), balance checks, transaction viewing, transfers (mocked confirmation flow), spending insights, and general banking Q&A. The system is designed so the mock bank integration can be replaced with a real bank API later.
+
+Goals
+-----
+- Provide a natural conversational interface on WhatsApp for banking tasks.
+- Ensure sensitive actions (transfers, balances) only occur when user bank account is connected.
+- Mock the bank integration initially to enable testing and UX validation.
+- Keep system architecture modular so real bank integrations (Mono, Okra, Plaid) can be swapped in.
+
+What we built (end-to-end)
+--------------------------
+1. Messaging endpoint and routing
+   - `index.js` exposes a webhook endpoint that receives WhatsApp messages.
+   - `src/controllers/webhookController.js` handles incoming HTTP events and routes them to the service layer.
+
+2. Session & user management
+   - `src/repositories/sessionRepository.js` stores session state (conversation history, pending transactions).
+   - `src/repositories/userRepository.js` manages user records (userId, phoneNumber, connection state).
+   - `src/models/User.js` updated to include fields for:
+     - `bankAccountConnected` (Boolean)
+     - `bankAccountId` (String)
+     - `bankConnectionDate` (Date)
+     - `connectionState` (temp state during onboarding)
+
+3. Conversation management
+   - `src/services/conversationService.js` manages conversation history, trimming, and formatting for AI.
+   - It prevents stale context beyond 30 minutes and limits history size.
+
+4. AI Service (Groq)
+   - `src/services/aiService.js` integrates with Groq (llama-3.3) for chat completions.
+   - We defined tool schemas (functions) the model can call:
+     - `check_account_status`, `initiate_account_connection`, `check_balance`, `get_transactions`, `transfer_money`, `get_spending_insights`.
+   - Important: the system prompt was made explicit about function calling behavior so the model never "exposes" function-call syntax to users (e.g., no `<function=...>` text). Functions are invisible and only used to fetch/compute data.
+   - `generateResponseFromFunction()` converts function results into a system message so the model can generate natural responses.
+   - Error handling added for common Groq API errors (rate limiting, invalid key).
+
+5. Bank service (mock)
+   - `src/repositories/mockBankRepository.js` stores test accounts and transactions.
+   - `src/services/bankService.js` provides sanitized access to mock data.
+   - Test accounts included (e.g., 1111222233 / PIN 9999 for Fredabod Technologies).
+
+6. Account connection flow (mocked)
+   - `src/services/accountConnectionService.js` implements a multi-step, stateful connection flow:
+     - Initiate connection → request account number (10 digits) → request 4-digit PIN → verify → mark user as connected.
+     - Enforces session expiration (10 minutes) and attempt limits (3 attempts).
+     - Supports cancel and disconnect.
+   - The flow stores temporary `connectionState` on the `User` model to track progress.
+
+7. Webhook orchestration & guards
+   - `src/services/webhookService.js` is the orchestration layer:
+     - Applies rate limiting per user
+     - Routes conversation messages to the AI service
+     - Intercepts function calls issued by the AI and executes them (bank access, connection flow, transfers)
+     - Ensures banking functions check `bankAccountConnected` before proceeding
+     - Handles transfer confirmations via `pendingTransaction` stored in session
+     - Adds robust logging and error handling
+
+8. WhatsApp adapter
+   - `src/utils/whatsappAdapter.js` sends outgoing messages via WhatsApp API (with retries).
+   - Note: currently some messages failed due to WhatsApp permission (#10) in logs; this is an operational setup issue (access/permissions) rather than code.
+
+9. Tests & docs
+   - `tests/test-account-connection.js` - automated script that runs the full mock connection flow (12 tests; all passing locally)
+   - `docs/ACCOUNT-CONNECTION-FLOW.md`, `docs/NEW-ACCOUNT-CONNECTION.md`, `docs/CONNECTION-COMPLETE.md`, `docs/GROQ-API-FIX.md` - detailed docs about flows, design decisions, and fixes
+
+Implementation details & notable decisions
+-----------------------------------------
+- Function calling: We rely on the LLM to decide when to call functions. The system prompt explicitly instructs the model to call functions silently and never display function call syntax to users. This avoids UX leakage where the model would print `<function=...>`.
+- Function result handling: Instead of sending messages with role `function` (Groq rejection), we include the function result as a `system` message with explicit instructions for the model to "respond naturally". This prevents API validation errors when history includes null message content.
+- Session design: Conversation history is trimmed to keep prompt size reasonable. A 30-minute timeout marks stale conversations to prevent long-term state leakage.
+- Security: The prototype validates input formats for account numbers and PINs, limits attempts, and expires sessions. For production we must replace PIN flow with OAuth / tokenized linking (Mono / Okra / Plaid) and encrypt any stored sensitive data.
+
+How to test locally
+-------------------
+1. Install dependencies
+   ```bash
+   npm install
+   ```
+2. Start MongoDB locally (or configure MONGODB_URI)
+3. Start the app
+   ```bash
+   npm run dev
+   ```
+4. Run the account connection tests
+   ```bash
+   node tests/test-account-connection.js
+   ```
+5. Simulate WhatsApp messages by sending to the webhook endpoint or using the test harness.
+
+Known issues / operational notes
+--------------------------------
+- WhatsApp API permission errors appeared in logs (OAuthException code 10). Ensure the app has required permissions and valid tokens.
+- Ensure `GROQ_API_KEY` is set in env to enable Groq AI. Otherwise the service falls back to basic intent handling.
+- For production, remove mock bank repository and integrate with a bank API provider. Store tokens/credentials securely.
+
+Next steps / roadmap
+--------------------
+- Integrate with a real bank API (Mono/Okra/ Plaid) using a secure OAuth/linking flow
+- Add token encryption and stricter security audits
+- Expand tests and add end-to-end integration tests with sandbox bank APIs
+- Improve NLU for more complex multi-intent dialogs and slot-filling
+- Add analytics/event tracking for monitoring user flows
+
+Appendix: Quick file map
+-----------------------
+- `index.js` - server entry
+- `src/controllers/webhookController.js` - HTTP layer
+- `src/services/webhookService.js` - orchestration and function execution
+- `src/services/aiService.js` - Groq integration and system prompt
+- `src/services/accountConnectionService.js` - account connection flow
+- `src/services/bankService.js` - bank interface (mock)
+- `src/repositories/mockBankRepository.js` - mock accounts and transactions
+- `src/repositories/sessionRepository.js` - session storage
+- `src/repositories/userRepository.js` - user CRUD
+- `src/models/User.js` - user schema (connection fields)
+- `src/services/conversationService.js` - conversation history helper
+- `src/utils/whatsappAdapter.js` - outbound WhatsApp API calls
+- `tests/test-account-connection.js` - connection flow tests
+- `docs/*` - documentation and guides
+
+---
+
+If you'd like, I can also convert this to a polished Google Doc-ready version (with headings and bullet formatting) or create a short slide deck summarizing the user flow and technical architecture.

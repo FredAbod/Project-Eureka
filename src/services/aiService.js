@@ -262,9 +262,13 @@ async function generateResponseFromFunction(functionName, functionResult, conver
   try {
     // Create a system message that includes the function result
     // This is more compatible with Groq's API than using role: 'function'
+    // Use role 'function' for function outputs so the model treats it like a function
+    // response and can generate a natural follow-up. Keep the instruction to not
+    // mention the function call in the assistant-facing reply.
     const functionResultMessage = {
-      role: 'system',
-      content: `Function ${functionName} returned: ${JSON.stringify(functionResult)}\n\nRespond naturally to the user based on this information. Do not mention the function call.`
+      role: 'function',
+      name: functionName,
+      content: JSON.stringify(functionResult)
     };
 
     const messages = [

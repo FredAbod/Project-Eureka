@@ -175,6 +175,49 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
           message: status.message,
           accountId: status.accountId || null
         };
+        // If the account is connected, attempt to satisfy the user's immediate intent
+        // instead of only returning a generic greeting. This avoids the assistant
+        // repeatedly replying with "Welcome back!" when the user actually asked
+        // for balances or transactions.
+        if (result.connected) {
+          try {
+            const lastUser = (conversationHistory && conversationHistory.length)
+              ? (conversationHistory[conversationHistory.length - 1].content || '')
+              : '';
+            const normalized = String(lastUser).toLowerCase();
+
+            // If the user's last message asked about balance, fetch accounts and
+            // generate a balance response.
+            if (normalized.includes('balance') || normalized.includes("how much") || normalized.includes("what's my balance") || normalized.includes('what is my balance')) {
+              const accounts = await bankService.getAccountsForUser(session.userId);
+              if (!accounts || accounts.length === 0) {
+                return { text: 'No accounts found. Please contact support.' };
+              }
+
+              // Record function result for context and generate natural response
+              await conversationService.addFunctionResult(phoneNumber, 'check_account_status', result);
+              const resp = await aiService.generateResponseFromFunction('check_balance', { accounts }, conversationHistory);
+              await conversationService.addAssistantMessage(phoneNumber, resp);
+              return { text: resp };
+            }
+
+            // If user asked for transactions, fetch transactions and return
+            if (normalized.includes('transaction') || normalized.includes('transactions') || normalized.includes('recent')) {
+              const txs = await bankService.getTransactionsForUser(session.userId);
+              if (!txs || txs.length === 0) {
+                return { text: 'No recent transactions found.' };
+              }
+
+              await conversationService.addFunctionResult(phoneNumber, 'check_account_status', result);
+              const resp = await aiService.generateResponseFromFunction('get_transactions', { transactions: txs.slice(0, 10) }, conversationHistory);
+              await conversationService.addAssistantMessage(phoneNumber, resp);
+              return { text: resp };
+            }
+          } catch (e) {
+            console.error('Error auto-handling post-check_account_status intent:', e.message);
+            // Fall through to normal behavior (generate greeting)
+          }
+        }
         break;
 
       case 'initiate_account_connection':

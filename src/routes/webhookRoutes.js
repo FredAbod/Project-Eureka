@@ -1,11 +1,24 @@
+/**
+ * Webhook Routes
+ * WhatsApp Cloud API webhook endpoints
+ */
+
 const express = require('express');
 const router = express.Router();
 const webhookController = require('../controllers/webhookController');
 
-// GET /webhook - used by WhatsApp Cloud API to verify webhook (hub.challenge)
-router.get('/', webhookController.verify);
+/**
+ * @route   GET /webhook
+ * @desc    Verify webhook (WhatsApp webhook verification)
+ * @access  Public
+ */
+router.get('/', webhookController.verifyWebhook);
 
-// POST /webhook - receive incoming messages
-router.post('/', webhookController.receive);
+/**
+ * @route   POST /webhook
+ * @desc    Handle incoming WhatsApp messages
+ * @access  Public
+ */
+router.post('/', webhookController.handleWebhook);
 
 module.exports = router;

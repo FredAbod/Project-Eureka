@@ -1,54 +1,65 @@
+/**
+ * User Model
+ * Represents a user in the Eureka banking platform
+ */
+
 const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  userId: {
-    type: String,
-    required: true,
-    unique: true,
-    index: true
-  },
   phoneNumber: {
     type: String,
     required: true,
     unique: true,
-    index: true
+    trim: true
   },
-  accountData: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
-  },
-  // Bank account connection status
-  bankAccountConnected: {
-    type: Boolean,
-    default: false
-  },
-  bankAccountId: {
+  name: {
     type: String,
-    default: null
+    required: true,
+    trim: true
   },
-  bankConnectionDate: {
-    type: Date,
-    default: null
+  email: {
+    type: String,
+    required: true,
+    trim: true,
+    lowercase: true
   },
-  // For storing temporary connection state during onboarding
-  connectionState: {
-    type: mongoose.Schema.Types.Mixed,
-    default: null
-  },
+  linkedAccounts: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'BankAccount'
+  }],
   preferences: {
-    type: mongoose.Schema.Types.Mixed,
-    default: {}
+    language: {
+      type: String,
+      default: 'en',
+      enum: ['en', 'pidgin', 'yo', 'ig', 'ha']
+    },
+    notifications: {
+      type: Boolean,
+      default: true
+    }
   },
   isActive: {
     type: Boolean,
     default: true
   },
-  lastLogin: {
+  createdAt: {
+    type: Date,
+    default: Date.now
+  },
+  lastActive: {
     type: Date,
     default: Date.now
   }
-}, {
-  timestamps: true
+});
+
+// Index for faster lookups
+userSchema.index({ phoneNumber: 1 });
+userSchema.index({ email: 1 });
+
+// Update lastActive on save
+userSchema.pre('save', function(next) {
+  this.lastActive = new Date();
+  next();
 });
 
 module.exports = mongoose.model('User', userSchema);

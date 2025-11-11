@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const connectDB = require('./src/config/database');
 const webhookRoutes = require('./src/routes/webhookRoutes');
+const monoRoutes = require('./src/routes/monoRoutes');
 
 // Connect to MongoDB
 connectDB();
@@ -36,6 +37,9 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 // Mount webhook routes (POST /webhook)
 app.use('/webhook', webhookRoutes);
+
+// Mount Mono banking routes
+app.use('/api/mono', monoRoutes);
 
 // Generic error handler
 app.use((err, req, res, next) => {

@@ -1,22 +1,18 @@
+/**
+ * Database Configuration
+ * MongoDB connection setup
+ */
+
 const mongoose = require('mongoose');
 
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/whatsappai', {
-      // These options are set by default in Mongoose 6+, but included for clarity
-    });
-    
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-    
-    // Graceful shutdown
-    process.on('SIGINT', async () => {
-      await mongoose.connection.close();
-      console.log('MongoDB connection closed.');
-      process.exit(0);
-    });
-    
+    const conn = await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/whatsappai');
+
+    console.log(`✅ Connected to MongoDB: ${conn.connection.host}`);
   } catch (error) {
-    console.error('MongoDB connection error:', error);
+    console.error('❌ MongoDB connection error:', error.message);
+    // Exit process with failure
     process.exit(1);
   }
 };

@@ -11,6 +11,7 @@ class WhatsAppService {
     this.apiUrl = process.env.WHATSAPP_API_URL;
     this.apiToken = process.env.WHATSAPP_API_TOKEN;
     this.verifyToken = process.env.WHATSAPP_VERIFY_TOKEN || "change_me";
+    console.log("🔌 WhatsApp Service Configured with URL:", this.apiUrl);
   }
 
   /**

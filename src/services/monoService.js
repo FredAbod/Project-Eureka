@@ -12,11 +12,9 @@ class MonoService {
     this.secretKey = process.env.MONO_SECRET_KEY;
     this.publicKey = process.env.MONO_PUBLIC_KEY;
     
-    // Detect sandbox vs production based on secret key prefix
-    const isSandbox = this.secretKey && this.secretKey.startsWith('test_');
-    this.baseUrl = isSandbox 
-      ? 'https://api.withmono.com/v1'  // Sandbox uses v1
-      : (process.env.MONO_BASE_URL || 'https://api.withmono.com/v2'); // Production uses v2
+    // Mono uses v2 for both sandbox and production
+    // Sandbox vs production is determined by the secret key (test_ prefix for sandbox)
+    this.baseUrl = process.env.MONO_BASE_URL || 'https://api.withmono.com/v2';
 
     if (!this.secretKey) {
       console.warn('⚠️ MONO_SECRET_KEY not set in environment variables');
@@ -25,6 +23,7 @@ class MonoService {
       console.warn('⚠️ MONO_PUBLIC_KEY not set in environment variables');
     }
     
+    const isSandbox = this.secretKey && this.secretKey.startsWith('test_');
     console.log('🔧 Mono Service initialized');
     console.log('   Environment:', isSandbox ? '🧪 SANDBOX (test)' : '🚀 PRODUCTION (live)');
     console.log('   Base URL:', this.baseUrl);
@@ -68,6 +67,7 @@ class MonoService {
         payload.meta = { ref };
       }
 
+      // Use the correct Mono API endpoint: api.withmono.com/v2/accounts/initiate
       const response = await fetch(`${this.baseUrl}/accounts/initiate`, {
         method: 'POST',
         headers: this.getHeaders(),
@@ -80,13 +80,15 @@ class MonoService {
         throw new Error(data.message || 'Failed to initiate account linking');
       }
 
-      console.log('✅ Mono Connect URL generated:', data.data.mono_url);
+      // Response structure: { status, message, timestamp, data: { mono_url, customer, meta, ... } }
+      const responseData = data.data;
+      console.log('✅ Mono Connect URL generated:', responseData.mono_url);
 
       return {
         success: true,
-        monoUrl: data.data.mono_url,
-        customerId: data.data.customer,
-        ref: data.data.meta?.ref
+        monoUrl: responseData.mono_url,
+        customerId: responseData.customer,
+        ref: responseData.meta?.ref
       };
     } catch (error) {
       console.error('❌ Error initiating account linking:', error.message);
@@ -118,11 +120,13 @@ class MonoService {
         throw new Error(data.message || 'Failed to exchange token');
       }
 
-      console.log('✅ Account ID obtained:', data.id);
+      // Response structure: { status, message, timestamp, data: { id } }
+      const accountId = data.data?.id || data.id;
+      console.log('✅ Account ID obtained:', accountId);
 
       return {
         success: true,
-        accountId: data.id
+        accountId: accountId
       };
     } catch (error) {
       console.error('❌ Error exchanging token:', error.message);
@@ -540,6 +544,151 @@ class MonoService {
       };
     } catch (error) {
       console.error('❌ Error initiating reauth:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Initiate a one-time payment
+   * Generates a payment link for customers to complete payment
+   * 
+   * @param {Object} options - Payment options
+   * @param {number} options.amount - Amount in kobo (e.g., 20000 = ₦200)
+   * @param {string} options.type - Payment type: 'onetime-debit'
+   * @param {string} options.method - Payment method: 'account', 'transfer', or 'whatsapp'
+   * @param {string} options.account - Account ID (for account method)
+   * @param {string} options.description - Payment description
+   * @param {string} options.reference - Unique payment reference
+   * @param {string} options.redirectUrl - URL to redirect after payment
+   * @param {Object} options.customer - Customer information
+   * @param {string} options.customer.name - Customer name
+   * @param {string} options.customer.email - Customer email
+   * @param {string} options.customer.phone - Customer phone
+   * @param {string} options.customer.address - Customer address (optional)
+   * @param {Object} options.customer.identity - Customer identity (optional)
+   * @param {Object} options.meta - Additional metadata (optional)
+   * @param {Object} options.split - Split payment configuration (optional)
+   * @returns {Promise<Object>} - Contains payment_link for completing payment
+   */
+  async initiatePayment(options) {
+    try {
+      const {
+        amount,
+        type = 'onetime-debit',
+        method = 'account',
+        account,
+        description,
+        reference,
+        redirectUrl,
+        customer,
+        meta = {},
+        split
+      } = options;
+
+      if (!amount || !reference || !customer) {
+        throw new Error('Amount, reference, and customer are required');
+      }
+
+      const payload = {
+        amount,
+        type,
+        method,
+        description,
+        reference,
+        redirect_url: redirectUrl,
+        customer: {
+          name: customer.name,
+          email: customer.email,
+          phone: customer.phone
+        },
+        meta
+      };
+
+      // Add account if using account method
+      if (method === 'account' && account) {
+        payload.account = account;
+      }
+
+      // Add optional customer fields
+      if (customer.address) {
+        payload.customer.address = customer.address;
+      }
+      if (customer.identity) {
+        payload.customer.identity = customer.identity;
+      }
+
+      // Add split payment configuration if provided
+      if (split) {
+        payload.split = split;
+      }
+
+      const response = await fetch(`${this.baseUrl}/payments/initiate`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to initiate payment');
+      }
+
+      console.log('✅ Payment initiated, reference:', reference);
+
+      return {
+        success: true,
+        paymentLink: data.data?.payment_link || data.payment_link,
+        reference: reference,
+        data: data.data || data
+      };
+    } catch (error) {
+      console.error('❌ Error initiating payment:', error.message);
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  /**
+   * Verify payment status
+   * Check the status of a payment using its reference
+   * 
+   * @param {string} reference - Payment reference used during initiation
+   * @returns {Promise<Object>} - Payment status and details
+   */
+  async verifyPayment(reference) {
+    try {
+      if (!reference) {
+        throw new Error('Payment reference is required');
+      }
+
+      const response = await fetch(`${this.baseUrl}/payments/verify/${reference}`, {
+        method: 'GET',
+        headers: this.getHeaders()
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to verify payment');
+      }
+
+      console.log('✅ Payment verified, status:', data.data?.status || data.status);
+
+      return {
+        success: true,
+        status: data.data?.status || data.status,
+        amount: data.data?.amount || data.amount,
+        reference: reference,
+        data: data.data || data
+      };
+    } catch (error) {
+      console.error('❌ Error verifying payment:', error.message);
       return {
         success: false,
         error: error.message

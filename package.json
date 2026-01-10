@@ -14,8 +14,8 @@
     "mongodb:stop": "docker-compose down",
     "mongodb:logs": "docker-compose logs -f mongodb",
     "ngrok:authtoken": "npx ngrok authtoken",
-    "ngrok": "npx ngrok http 3000",
-    "tunnel": "npx localtunnel --port 3000"
+    "ngrok": "npx ngrok http 4000",
+    "tunnel": "npx localtunnel --port 4000"
   },
   "keywords": [],
   "author": "",

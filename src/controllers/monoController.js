@@ -61,11 +61,42 @@ const initiateAccountLinking = async (req, res) => {
 
 /**
  * Handle Mono callback after successful account linking
- * GET /api/mono/callback?code=xxxxx
+ * GET /api/mono/callback?code=xxxxx&status=linked
+ * 
+ * Callback params:
+ * - code: Authorization code to exchange for account ID (production)
+ * - status: 'linked' or 'failed'
+ * - reason: 'account_linked', 'widget_closed', etc.
+ * - reference: The ref passed during initiation
  */
 const handleCallback = async (req, res) => {
   try {
-    const { code } = req.query;
+    const { code, status, reason, reference } = req.query;
+
+    console.log(`📥 Mono callback: status=${status}, reason=${reason}, code=${code ? 'present' : 'missing'}, ref=${reference}`);
+
+    // Handle failed linking
+    if (status === 'failed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Account linking failed',
+        reason: reason || 'Unknown error'
+      });
+    }
+
+    // Handle successful linking (status=linked)
+    if (status === 'linked' && !code) {
+      // In sandbox mode, might not get a code - show success page
+      // In production with WhatsApp, you'd send a message to the user
+      return res.json({
+        success: true,
+        message: 'Account linked successfully! You can now use the /link-account endpoint with the code from Mono webhook.',
+        status: status,
+        reason: reason,
+        reference: reference,
+        note: 'For production, set up Mono webhooks to receive the account ID automatically.'
+      });
+    }
 
     if (!code) {
       return res.status(400).json({
@@ -90,13 +121,13 @@ const handleCallback = async (req, res) => {
       return res.status(500).json(accountResult);
     }
 
-    // TODO: Extract user ID from ref parameter
-    // For now, return the account details
-    // In production, you'd save this to the database linked to the user
+    // TODO: Extract user ID from ref parameter and save to database
+    // For WhatsApp integration, send the account details to the user via WhatsApp
 
     res.json({
       success: true,
       message: 'Account linked successfully!',
+      accountId: accountId,
       account: accountResult.account
     });
   } catch (error) {
@@ -476,6 +507,369 @@ const getBanks = async (req, res) => {
   }
 };
 
+/**
+ * Initiate a one-time payment
+ * POST /api/mono/payments/initiate
+ */
+const initiatePayment = async (req, res) => {
+  try {
+    const {
+      amount,
+      type,
+      method,
+      account,
+      description,
+      reference,
+      redirectUrl,
+      customer,
+      meta,
+      split
+    } = req.body;
+
+    if (!amount || !reference || !customer) {
+      return res.status(400).json({
+        success: false,
+        message: 'Amount, reference, and customer (name, email, phone) are required'
+      });
+    }
+
+    if (!customer.name || !customer.email || !customer.phone) {
+      return res.status(400).json({
+        success: false,
+        message: 'Customer name, email, and phone are required'
+      });
+    }
+
+    const result = await monoService.initiatePayment({
+      amount,
+      type: type || 'onetime-debit',
+      method: method || 'account',
+      account,
+      description,
+      reference,
+      redirectUrl: redirectUrl || `${process.env.BASE_URL || 'http://localhost:3000'}/api/mono/payments/callback`,
+      customer,
+      meta,
+      split
+    });
+
+    if (!result.success) {
+      return res.status(500).json(result);
+    }
+
+    res.json({
+      success: true,
+      message: 'Payment initiated',
+      paymentLink: result.paymentLink,
+      reference: result.reference,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Error in initiatePayment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Verify payment status
+ * GET /api/mono/payments/verify/:reference
+ */
+const verifyPayment = async (req, res) => {
+  try {
+    const { reference } = req.params;
+
+    if (!reference) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment reference is required'
+      });
+    }
+
+    const result = await monoService.verifyPayment(reference);
+
+    if (!result.success) {
+      return res.status(500).json(result);
+    }
+
+    res.json({
+      success: true,
+      status: result.status,
+      amount: result.amount,
+      reference: result.reference,
+      data: result.data
+    });
+  } catch (error) {
+    console.error('❌ Error in verifyPayment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Handle payment callback (redirect after payment)
+ * GET /api/mono/payments/callback
+ */
+const handlePaymentCallback = async (req, res) => {
+  try {
+    const { reference, status, reason } = req.query;
+
+    console.log(`📥 Payment callback: reference=${reference}, status=${status}, reason=${reason || 'N/A'}`);
+
+    if (status === 'successful') {
+      // Verify the payment
+      const result = await monoService.verifyPayment(reference);
+      
+      // You can redirect to a success page or return JSON
+      res.json({
+        success: true,
+        message: 'Payment successful',
+        reference,
+        data: result.data
+      });
+    } else {
+      res.json({
+        success: false,
+        message: 'Payment failed',
+        reference,
+        reason: reason || 'Unknown error'
+      });
+    }
+  } catch (error) {
+    console.error('❌ Error in handlePaymentCallback:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Handle Mono webhook events
+ * POST /api/mono/webhook
+ * 
+ * Mono webhook events:
+ * - mono.events.account_connected: User successfully linked their account
+ * - mono.events.account_updated: Account data has been updated
+ * - mono.events.reauthorisation_required: Account needs re-authentication
+ * - mono.events.account_reauthorized: Account has been re-authenticated
+ * - mono.events.unlink: Account has been unlinked
+ */
+const handleMonoWebhook = async (req, res) => {
+  try {
+    // Verify webhook signature (optional but recommended)
+    const webhookSecret = process.env.MONO_WEBHOOK_SECRET;
+    const signature = req.headers['mono-webhook-sec'];
+    
+    if (webhookSecret && signature !== webhookSecret) {
+      console.warn('⚠️ Invalid Mono webhook signature');
+      return res.status(401).json({ success: false, message: 'Invalid signature' });
+    }
+
+    const { event, data } = req.body;
+    
+    console.log(`📥 Mono webhook received: ${event}`);
+    console.log('   Data:', JSON.stringify(data, null, 2));
+
+    // Acknowledge receipt immediately
+    res.status(200).json({ success: true, received: true });
+
+    // Process webhook asynchronously
+    await processMonoWebhook(event, data);
+
+  } catch (error) {
+    console.error('❌ Error in handleMonoWebhook:', error);
+    // Still return 200 to prevent retries for processing errors
+    res.status(200).json({ success: true, received: true });
+  }
+};
+
+/**
+ * Process Mono webhook events asynchronously
+ */
+async function processMonoWebhook(event, data) {
+  try {
+    // Lazy load whatsappService to avoid circular dependency
+    const whatsappService = require('../services/whatsappService');
+    
+    switch (event) {
+      case 'mono.events.account_connected': {
+        // User successfully linked their account
+        const { account, meta } = data;
+        const accountId = account?.id || data.id;
+        const ref = meta?.ref;
+        
+        console.log(`✅ Account connected: ${accountId}, ref: ${ref}`);
+        
+        // Extract user ID from ref (format: user_<userId>)
+        let userId = null;
+        let phoneNumber = null;
+        
+        if (ref && ref.startsWith('user_')) {
+          userId = ref.replace('user_', '');
+          
+          // Find user to get phone number
+          const user = await User.findById(userId);
+          if (user) {
+            phoneNumber = user.phoneNumber;
+          }
+        }
+        
+        if (accountId) {
+          // Fetch account details from Mono
+          const accountResult = await monoService.getAccountDetails(accountId);
+          
+          if (accountResult.success && userId) {
+            // Check if account already exists
+            const existingAccount = await BankAccount.findOne({ monoAccountId: accountId });
+            
+            if (!existingAccount) {
+              // Save to database
+              const bankAccount = new BankAccount({
+                userId: userId,
+                monoAccountId: accountId,
+                accountNumber: accountResult.account.accountNumber,
+                accountName: accountResult.account.name,
+                bankName: accountResult.account.institution.name,
+                bankCode: accountResult.account.institution.bankCode,
+                balance: accountResult.account.balance,
+                currency: accountResult.account.currency,
+                accountType: accountResult.account.type,
+                isActive: true
+              });
+              
+              await bankAccount.save();
+              console.log(`✅ Bank account saved to database: ${accountResult.account.institution.name}`);
+            }
+            
+            // Send WhatsApp notification to user
+            if (phoneNumber) {
+              const message = `✅ *Bank Account Linked Successfully!*\n\n` +
+                `🏦 Bank: ${accountResult.account.institution.name}\n` +
+                `📄 Account: ****${accountResult.account.accountNumber.slice(-4)}\n` +
+                `💰 Balance: ${accountResult.account.currency} ${(accountResult.account.balance / 100).toLocaleString()}\n\n` +
+                `You can now check your balance and transactions through WhatsApp!`;
+              
+              await whatsappService.sendMessage(phoneNumber, message);
+              console.log(`📱 WhatsApp notification sent to ${phoneNumber}`);
+            }
+          }
+        }
+        break;
+      }
+      
+      case 'mono.events.account_updated': {
+        // Account data has been synced/updated
+        const accountId = data.account?.id || data.id;
+        console.log(`🔄 Account updated: ${accountId}`);
+        
+        if (accountId) {
+          // Update balance in database
+          const accountResult = await monoService.getAccountDetails(accountId);
+          
+          if (accountResult.success) {
+            await BankAccount.findOneAndUpdate(
+              { monoAccountId: accountId },
+              { 
+                balance: accountResult.account.balance,
+                updatedAt: new Date()
+              }
+            );
+            console.log(`✅ Account balance updated in database`);
+          }
+        }
+        break;
+      }
+      
+      case 'mono.events.reauthorisation_required': {
+        // Account needs re-authentication
+        const accountId = data.account?.id || data.id;
+        console.log(`⚠️ Reauthorization required for account: ${accountId}`);
+        
+        // Find the bank account and user
+        const bankAccount = await BankAccount.findOne({ monoAccountId: accountId }).populate('userId');
+        
+        if (bankAccount && bankAccount.userId?.phoneNumber) {
+          // Generate reauth URL
+          const redirectUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/api/mono/callback`;
+          const reauthResult = await monoService.initiateReauth(accountId, redirectUrl);
+          
+          if (reauthResult.success) {
+            const message = `⚠️ *Action Required: Re-authenticate Your Bank Account*\n\n` +
+              `🏦 Your ${bankAccount.bankName} account needs to be re-authenticated.\n\n` +
+              `Please click the link below to reconnect:\n${reauthResult.monoUrl}`;
+            
+            await whatsappService.sendMessage(bankAccount.userId.phoneNumber, message);
+            console.log(`📱 Reauth notification sent to ${bankAccount.userId.phoneNumber}`);
+          }
+        }
+        
+        // Mark account as needing reauth
+        await BankAccount.findOneAndUpdate(
+          { monoAccountId: accountId },
+          { isActive: false }
+        );
+        break;
+      }
+      
+      case 'mono.events.account_reauthorized': {
+        // Account has been re-authenticated
+        const accountId = data.account?.id || data.id;
+        console.log(`✅ Account reauthorized: ${accountId}`);
+        
+        // Reactivate account
+        await BankAccount.findOneAndUpdate(
+          { monoAccountId: accountId },
+          { isActive: true }
+        );
+        
+        // Find user and notify
+        const bankAccount = await BankAccount.findOne({ monoAccountId: accountId }).populate('userId');
+        if (bankAccount && bankAccount.userId?.phoneNumber) {
+          const message = `✅ *Bank Account Reconnected!*\n\n` +
+            `Your ${bankAccount.bankName} account has been successfully reconnected.`;
+          
+          await whatsappService.sendMessage(bankAccount.userId.phoneNumber, message);
+        }
+        break;
+      }
+      
+      case 'mono.events.unlink': {
+        // Account has been unlinked
+        const accountId = data.account?.id || data.id;
+        console.log(`🗑️ Account unlinked: ${accountId}`);
+        
+        // Find and notify user before deleting
+        const bankAccount = await BankAccount.findOne({ monoAccountId: accountId }).populate('userId');
+        
+        if (bankAccount && bankAccount.userId?.phoneNumber) {
+          const message = `ℹ️ *Bank Account Disconnected*\n\n` +
+            `Your ${bankAccount.bankName} account has been disconnected.\n\n` +
+            `To link a new account, send "link account".`;
+          
+          await whatsappService.sendMessage(bankAccount.userId.phoneNumber, message);
+        }
+        
+        // Remove from database
+        await BankAccount.findOneAndDelete({ monoAccountId: accountId });
+        break;
+      }
+      
+      default:
+        console.log(`ℹ️ Unhandled Mono webhook event: ${event}`);
+    }
+  } catch (error) {
+    console.error(`❌ Error processing Mono webhook (${event}):`, error.message);
+  }
+}
+
 module.exports = {
   initiateAccountLinking,
   handleCallback,
@@ -485,5 +879,9 @@ module.exports = {
   getTransactions,
   syncAccount,
   unlinkAccount,
-  getBanks
+  getBanks,
+  initiatePayment,
+  verifyPayment,
+  handlePaymentCallback,
+  handleMonoWebhook
 };

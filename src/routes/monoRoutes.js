@@ -79,4 +79,43 @@ router.delete('/unlink/:accountId', monoController.unlinkAccount);
  */
 router.get('/banks', monoController.getBanks);
 
+// ============================================
+// PAYMENT ROUTES
+// ============================================
+
+/**
+ * @route   POST /api/mono/payments/initiate
+ * @desc    Initiate a one-time payment
+ * @access  Public
+ * @body    { amount, type, method, account, description, reference, redirectUrl, customer, meta, split }
+ */
+router.post('/payments/initiate', monoController.initiatePayment);
+
+/**
+ * @route   GET /api/mono/payments/verify/:reference
+ * @desc    Verify payment status
+ * @access  Public
+ * @param   reference - Payment reference
+ */
+router.get('/payments/verify/:reference', monoController.verifyPayment);
+
+/**
+ * @route   GET /api/mono/payments/callback
+ * @desc    Handle payment redirect callback
+ * @access  Public
+ * @query   reference, status, reason
+ */
+router.get('/payments/callback', monoController.handlePaymentCallback);
+
+// ============================================
+// WEBHOOK ROUTES
+// ============================================
+
+/**
+ * @route   POST /api/mono/webhook
+ * @desc    Handle Mono webhook events (account.connected, etc.)
+ * @access  Public (verified by webhook secret)
+ */
+router.post('/webhook', monoController.handleMonoWebhook);
+
 module.exports = router;

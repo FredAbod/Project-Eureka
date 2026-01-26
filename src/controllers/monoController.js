@@ -716,9 +716,12 @@ async function processMonoWebhook(event, data) {
     switch (event) {
       case "mono.events.account_connected": {
         // User successfully linked their account
-        const { account, meta } = data;
-        const accountId = account?.id || data.id;
-        const ref = meta?.ref;
+        // Note: Mono sends account as a string ID directly, not an object
+        const accountId =
+          typeof data.account === "string"
+            ? data.account
+            : data.account?.id || data.id;
+        const ref = data.meta?.ref || data.reference;
 
         console.log(`✅ Account connected: ${accountId}, ref: ${ref}`);
 

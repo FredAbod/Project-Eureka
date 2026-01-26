@@ -3,9 +3,9 @@
  * Handles HTTP requests for Mono bank account operations
  */
 
-const monoService = require('../services/monoService');
-const User = require('../models/User');
-const BankAccount = require('../models/BankAccount');
+const monoService = require("../services/monoService");
+const User = require("../models/User");
+const BankAccount = require("../models/BankAccount");
 
 /**
  * Start bank account linking process
@@ -18,7 +18,7 @@ const initiateAccountLinking = async (req, res) => {
     if (!phoneNumber || !name || !email) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number, name, and email are required'
+        message: "Phone number, name, and email are required",
       });
     }
 
@@ -30,13 +30,13 @@ const initiateAccountLinking = async (req, res) => {
     }
 
     // Generate Mono Connect URL
-    const redirectUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/api/mono/callback`;
+    const redirectUrl = `${process.env.BASE_URL || "http://localhost:3000"}/api/mono/callback`;
     const ref = `user_${user._id}`;
 
     const result = await monoService.initiateAccountLinking(
       { name, email },
       redirectUrl,
-      ref
+      ref,
     );
 
     if (!result.success) {
@@ -45,16 +45,16 @@ const initiateAccountLinking = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Account linking initiated',
+      message: "Account linking initiated",
       monoUrl: result.monoUrl,
-      ref: result.ref
+      ref: result.ref,
     });
   } catch (error) {
-    console.error('❌ Error in initiateAccountLinking:', error);
+    console.error("❌ Error in initiateAccountLinking:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -62,7 +62,7 @@ const initiateAccountLinking = async (req, res) => {
 /**
  * Handle Mono callback after successful account linking
  * GET /api/mono/callback?code=xxxxx&status=linked
- * 
+ *
  * Callback params:
  * - code: Authorization code to exchange for account ID (production)
  * - status: 'linked' or 'failed'
@@ -73,35 +73,38 @@ const handleCallback = async (req, res) => {
   try {
     const { code, status, reason, reference } = req.query;
 
-    console.log(`📥 Mono callback: status=${status}, reason=${reason}, code=${code ? 'present' : 'missing'}, ref=${reference}`);
+    console.log(
+      `📥 Mono callback: status=${status}, reason=${reason}, code=${code ? "present" : "missing"}, ref=${reference}`,
+    );
 
     // Handle failed linking
-    if (status === 'failed') {
+    if (status === "failed") {
       return res.status(400).json({
         success: false,
-        message: 'Account linking failed',
-        reason: reason || 'Unknown error'
+        message: "Account linking failed",
+        reason: reason || "Unknown error",
       });
     }
 
     // Handle successful linking (status=linked)
-    if (status === 'linked' && !code) {
+    if (status === "linked" && !code) {
       // In sandbox mode, might not get a code - show success page
       // In production with WhatsApp, you'd send a message to the user
       return res.json({
         success: true,
-        message: 'Account linked successfully! You can now use the /link-account endpoint with the code from Mono webhook.',
+        message:
+          "Account linked successfully! You can now use the /link-account endpoint with the code from Mono webhook.",
         status: status,
         reason: reason,
         reference: reference,
-        note: 'For production, set up Mono webhooks to receive the account ID automatically.'
+        note: "For production, set up Mono webhooks to receive the account ID automatically.",
       });
     }
 
     if (!code) {
       return res.status(400).json({
         success: false,
-        message: 'Authorization code is required'
+        message: "Authorization code is required",
       });
     }
 
@@ -126,16 +129,16 @@ const handleCallback = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Account linked successfully!',
+      message: "Account linked successfully!",
       accountId: accountId,
-      account: accountResult.account
+      account: accountResult.account,
     });
   } catch (error) {
-    console.error('❌ Error in handleCallback:', error);
+    console.error("❌ Error in handleCallback:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -152,7 +155,7 @@ const linkAccount = async (req, res) => {
     if (!code || !phoneNumber) {
       return res.status(400).json({
         success: false,
-        message: 'Code and phone number are required'
+        message: "Code and phone number are required",
       });
     }
 
@@ -161,7 +164,7 @@ const linkAccount = async (req, res) => {
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
 
@@ -205,7 +208,7 @@ const linkAccount = async (req, res) => {
         currency: accountResult.account.currency,
         accountType: accountResult.account.type,
         isActive: true,
-        lastSynced: new Date()
+        lastSynced: new Date(),
       });
     }
 
@@ -219,22 +222,22 @@ const linkAccount = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Bank account linked successfully!',
+      message: "Bank account linked successfully!",
       account: {
         id: bankAccount._id,
         accountNumber: bankAccount.accountNumber,
         accountName: bankAccount.accountName,
         bankName: bankAccount.bankName,
         balance: bankAccount.balance,
-        currency: bankAccount.currency
-      }
+        currency: bankAccount.currency,
+      },
     });
   } catch (error) {
-    console.error('❌ Error in linkAccount:', error);
+    console.error("❌ Error in linkAccount:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -250,22 +253,22 @@ const getLinkedAccounts = async (req, res) => {
     if (!phoneNumber) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number is required'
+        message: "Phone number is required",
       });
     }
 
-    const user = await User.findOne({ phoneNumber }).populate('linkedAccounts');
+    const user = await User.findOne({ phoneNumber }).populate("linkedAccounts");
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: "User not found",
       });
     }
 
     res.json({
       success: true,
-      accounts: user.linkedAccounts.map(acc => ({
+      accounts: user.linkedAccounts.map((acc) => ({
         id: acc._id,
         accountNumber: acc.accountNumber,
         accountName: acc.accountName,
@@ -273,15 +276,15 @@ const getLinkedAccounts = async (req, res) => {
         balance: acc.balance,
         currency: acc.currency,
         isActive: acc.isActive,
-        lastSynced: acc.lastSynced
-      }))
+        lastSynced: acc.lastSynced,
+      })),
     });
   } catch (error) {
-    console.error('❌ Error in getLinkedAccounts:', error);
+    console.error("❌ Error in getLinkedAccounts:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -299,7 +302,7 @@ const getBalance = async (req, res) => {
     if (!bankAccount) {
       return res.status(404).json({
         success: false,
-        message: 'Account not found'
+        message: "Account not found",
       });
     }
 
@@ -313,7 +316,7 @@ const getBalance = async (req, res) => {
         balance: bankAccount.balance,
         currency: bankAccount.currency,
         cached: true,
-        lastSynced: bankAccount.lastSynced
+        lastSynced: bankAccount.lastSynced,
       });
     }
 
@@ -327,14 +330,14 @@ const getBalance = async (req, res) => {
       balance: result.balance,
       currency: result.currency,
       cached: false,
-      lastSynced: bankAccount.lastSynced
+      lastSynced: bankAccount.lastSynced,
     });
   } catch (error) {
-    console.error('❌ Error in getBalance:', error);
+    console.error("❌ Error in getBalance:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -353,15 +356,18 @@ const getTransactions = async (req, res) => {
     if (!bankAccount) {
       return res.status(404).json({
         success: false,
-        message: 'Account not found'
+        message: "Account not found",
       });
     }
 
-    const result = await monoService.getTransactions(bankAccount.monoAccountId, {
-      page: page ? parseInt(page) : 1,
-      start,
-      end
-    });
+    const result = await monoService.getTransactions(
+      bankAccount.monoAccountId,
+      {
+        page: page ? parseInt(page) : 1,
+        start,
+        end,
+      },
+    );
 
     if (!result.success) {
       return res.status(500).json(result);
@@ -370,14 +376,14 @@ const getTransactions = async (req, res) => {
     res.json({
       success: true,
       transactions: result.transactions,
-      meta: result.meta
+      meta: result.meta,
     });
   } catch (error) {
-    console.error('❌ Error in getTransactions:', error);
+    console.error("❌ Error in getTransactions:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -395,7 +401,7 @@ const syncAccount = async (req, res) => {
     if (!bankAccount) {
       return res.status(404).json({
         success: false,
-        message: 'Account not found'
+        message: "Account not found",
       });
     }
 
@@ -407,7 +413,9 @@ const syncAccount = async (req, res) => {
     }
 
     // Fetch updated account details
-    const accountResult = await monoService.getAccountDetails(bankAccount.monoAccountId);
+    const accountResult = await monoService.getAccountDetails(
+      bankAccount.monoAccountId,
+    );
 
     if (accountResult.success) {
       bankAccount.balance = accountResult.account.balance;
@@ -417,18 +425,18 @@ const syncAccount = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Account synced successfully',
+      message: "Account synced successfully",
       account: {
         balance: bankAccount.balance,
-        lastSynced: bankAccount.lastSynced
-      }
+        lastSynced: bankAccount.lastSynced,
+      },
     });
   } catch (error) {
-    console.error('❌ Error in syncAccount:', error);
+    console.error("❌ Error in syncAccount:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -446,7 +454,7 @@ const unlinkAccount = async (req, res) => {
     if (!bankAccount) {
       return res.status(404).json({
         success: false,
-        message: 'Account not found'
+        message: "Account not found",
       });
     }
 
@@ -464,19 +472,19 @@ const unlinkAccount = async (req, res) => {
     // Remove from user's linked accounts
     await User.updateOne(
       { _id: bankAccount.userId },
-      { $pull: { linkedAccounts: bankAccount._id } }
+      { $pull: { linkedAccounts: bankAccount._id } },
     );
 
     res.json({
       success: true,
-      message: 'Account unlinked successfully'
+      message: "Account unlinked successfully",
     });
   } catch (error) {
-    console.error('❌ Error in unlinkAccount:', error);
+    console.error("❌ Error in unlinkAccount:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -495,14 +503,14 @@ const getBanks = async (req, res) => {
 
     res.json({
       success: true,
-      banks: result.banks
+      banks: result.banks,
     });
   } catch (error) {
-    console.error('❌ Error in getBanks:', error);
+    console.error("❌ Error in getBanks:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -523,34 +531,37 @@ const initiatePayment = async (req, res) => {
       redirectUrl,
       customer,
       meta,
-      split
+      split,
     } = req.body;
 
     if (!amount || !reference || !customer) {
       return res.status(400).json({
         success: false,
-        message: 'Amount, reference, and customer (name, email, phone) are required'
+        message:
+          "Amount, reference, and customer (name, email, phone) are required",
       });
     }
 
     if (!customer.name || !customer.email || !customer.phone) {
       return res.status(400).json({
         success: false,
-        message: 'Customer name, email, and phone are required'
+        message: "Customer name, email, and phone are required",
       });
     }
 
     const result = await monoService.initiatePayment({
       amount,
-      type: type || 'onetime-debit',
-      method: method || 'account',
+      type: type || "onetime-debit",
+      method: method || "account",
       account,
       description,
       reference,
-      redirectUrl: redirectUrl || `${process.env.BASE_URL || 'http://localhost:3000'}/api/mono/payments/callback`,
+      redirectUrl:
+        redirectUrl ||
+        `${process.env.BASE_URL || "http://localhost:3000"}/api/mono/payments/callback`,
       customer,
       meta,
-      split
+      split,
     });
 
     if (!result.success) {
@@ -559,17 +570,17 @@ const initiatePayment = async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Payment initiated',
+      message: "Payment initiated",
       paymentLink: result.paymentLink,
       reference: result.reference,
-      data: result.data
+      data: result.data,
     });
   } catch (error) {
-    console.error('❌ Error in initiatePayment:', error);
+    console.error("❌ Error in initiatePayment:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -585,7 +596,7 @@ const verifyPayment = async (req, res) => {
     if (!reference) {
       return res.status(400).json({
         success: false,
-        message: 'Payment reference is required'
+        message: "Payment reference is required",
       });
     }
 
@@ -600,14 +611,14 @@ const verifyPayment = async (req, res) => {
       status: result.status,
       amount: result.amount,
       reference: result.reference,
-      data: result.data
+      data: result.data,
     });
   } catch (error) {
-    console.error('❌ Error in verifyPayment:', error);
+    console.error("❌ Error in verifyPayment:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -620,33 +631,35 @@ const handlePaymentCallback = async (req, res) => {
   try {
     const { reference, status, reason } = req.query;
 
-    console.log(`📥 Payment callback: reference=${reference}, status=${status}, reason=${reason || 'N/A'}`);
+    console.log(
+      `📥 Payment callback: reference=${reference}, status=${status}, reason=${reason || "N/A"}`,
+    );
 
-    if (status === 'successful') {
+    if (status === "successful") {
       // Verify the payment
       const result = await monoService.verifyPayment(reference);
-      
+
       // You can redirect to a success page or return JSON
       res.json({
         success: true,
-        message: 'Payment successful',
+        message: "Payment successful",
         reference,
-        data: result.data
+        data: result.data,
       });
     } else {
       res.json({
         success: false,
-        message: 'Payment failed',
+        message: "Payment failed",
         reference,
-        reason: reason || 'Unknown error'
+        reason: reason || "Unknown error",
       });
     }
   } catch (error) {
-    console.error('❌ Error in handlePaymentCallback:', error);
+    console.error("❌ Error in handlePaymentCallback:", error);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: error.message
+      message: "Internal server error",
+      error: error.message,
     });
   }
 };
@@ -654,7 +667,7 @@ const handlePaymentCallback = async (req, res) => {
 /**
  * Handle Mono webhook events
  * POST /api/mono/webhook
- * 
+ *
  * Mono webhook events:
  * - mono.events.account_connected: User successfully linked their account
  * - mono.events.account_updated: Account data has been updated
@@ -666,26 +679,27 @@ const handleMonoWebhook = async (req, res) => {
   try {
     // Verify webhook signature (optional but recommended)
     const webhookSecret = process.env.MONO_WEBHOOK_SECRET;
-    const signature = req.headers['mono-webhook-sec'];
-    
+    const signature = req.headers["mono-webhook-secret"];
+
     if (webhookSecret && signature !== webhookSecret) {
-      console.warn('⚠️ Invalid Mono webhook signature');
-      return res.status(401).json({ success: false, message: 'Invalid signature' });
+      console.warn("⚠️ Invalid Mono webhook signature");
+      return res
+        .status(401)
+        .json({ success: false, message: "Invalid signature" });
     }
 
     const { event, data } = req.body;
-    
+
     console.log(`📥 Mono webhook received: ${event}`);
-    console.log('   Data:', JSON.stringify(data, null, 2));
+    console.log("   Data:", JSON.stringify(data, null, 2));
 
     // Acknowledge receipt immediately
     res.status(200).json({ success: true, received: true });
 
     // Process webhook asynchronously
     await processMonoWebhook(event, data);
-
   } catch (error) {
-    console.error('❌ Error in handleMonoWebhook:', error);
+    console.error("❌ Error in handleMonoWebhook:", error);
     // Still return 200 to prevent retries for processing errors
     res.status(200).json({ success: true, received: true });
   }
@@ -697,39 +711,41 @@ const handleMonoWebhook = async (req, res) => {
 async function processMonoWebhook(event, data) {
   try {
     // Lazy load whatsappService to avoid circular dependency
-    const whatsappService = require('../services/whatsappService');
-    
+    const whatsappService = require("../services/whatsappService");
+
     switch (event) {
-      case 'mono.events.account_connected': {
+      case "mono.events.account_connected": {
         // User successfully linked their account
         const { account, meta } = data;
         const accountId = account?.id || data.id;
         const ref = meta?.ref;
-        
+
         console.log(`✅ Account connected: ${accountId}, ref: ${ref}`);
-        
+
         // Extract user ID from ref (format: user_<userId>)
         let userId = null;
         let phoneNumber = null;
-        
-        if (ref && ref.startsWith('user_')) {
-          userId = ref.replace('user_', '');
-          
+
+        if (ref && ref.startsWith("user_")) {
+          userId = ref.replace("user_", "");
+
           // Find user to get phone number
           const user = await User.findById(userId);
           if (user) {
             phoneNumber = user.phoneNumber;
           }
         }
-        
+
         if (accountId) {
           // Fetch account details from Mono
           const accountResult = await monoService.getAccountDetails(accountId);
-          
+
           if (accountResult.success && userId) {
             // Check if account already exists
-            const existingAccount = await BankAccount.findOne({ monoAccountId: accountId });
-            
+            const existingAccount = await BankAccount.findOne({
+              monoAccountId: accountId,
+            });
+
             if (!existingAccount) {
               // Save to database
               const bankAccount = new BankAccount({
@@ -742,21 +758,24 @@ async function processMonoWebhook(event, data) {
                 balance: accountResult.account.balance,
                 currency: accountResult.account.currency,
                 accountType: accountResult.account.type,
-                isActive: true
+                isActive: true,
               });
-              
+
               await bankAccount.save();
-              console.log(`✅ Bank account saved to database: ${accountResult.account.institution.name}`);
+              console.log(
+                `✅ Bank account saved to database: ${accountResult.account.institution.name}`,
+              );
             }
-            
+
             // Send WhatsApp notification to user
             if (phoneNumber) {
-              const message = `✅ *Bank Account Linked Successfully!*\n\n` +
+              const message =
+                `✅ *Bank Account Linked Successfully!*\n\n` +
                 `🏦 Bank: ${accountResult.account.institution.name}\n` +
                 `📄 Account: ****${accountResult.account.accountNumber.slice(-4)}\n` +
                 `💰 Balance: ${accountResult.account.currency} ${(accountResult.account.balance / 100).toLocaleString()}\n\n` +
                 `You can now check your balance and transactions through WhatsApp!`;
-              
+
               await whatsappService.sendMessage(phoneNumber, message);
               console.log(`📱 WhatsApp notification sent to ${phoneNumber}`);
             }
@@ -764,109 +783,135 @@ async function processMonoWebhook(event, data) {
         }
         break;
       }
-      
-      case 'mono.events.account_updated': {
+
+      case "mono.events.account_updated": {
         // Account data has been synced/updated
         const accountId = data.account?.id || data.id;
         console.log(`🔄 Account updated: ${accountId}`);
-        
+
         if (accountId) {
           // Update balance in database
           const accountResult = await monoService.getAccountDetails(accountId);
-          
+
           if (accountResult.success) {
             await BankAccount.findOneAndUpdate(
               { monoAccountId: accountId },
-              { 
+              {
                 balance: accountResult.account.balance,
-                updatedAt: new Date()
-              }
+                updatedAt: new Date(),
+              },
             );
             console.log(`✅ Account balance updated in database`);
           }
         }
         break;
       }
-      
-      case 'mono.events.reauthorisation_required': {
+
+      case "mono.events.reauthorisation_required": {
         // Account needs re-authentication
         const accountId = data.account?.id || data.id;
         console.log(`⚠️ Reauthorization required for account: ${accountId}`);
-        
+
         // Find the bank account and user
-        const bankAccount = await BankAccount.findOne({ monoAccountId: accountId }).populate('userId');
-        
+        const bankAccount = await BankAccount.findOne({
+          monoAccountId: accountId,
+        }).populate("userId");
+
         if (bankAccount && bankAccount.userId?.phoneNumber) {
           // Generate reauth URL
-          const redirectUrl = `${process.env.BASE_URL || 'http://localhost:3000'}/api/mono/callback`;
-          const reauthResult = await monoService.initiateReauth(accountId, redirectUrl);
-          
+          const redirectUrl = `${process.env.BASE_URL || "http://localhost:3000"}/api/mono/callback`;
+          const reauthResult = await monoService.initiateReauth(
+            accountId,
+            redirectUrl,
+          );
+
           if (reauthResult.success) {
-            const message = `⚠️ *Action Required: Re-authenticate Your Bank Account*\n\n` +
+            const message =
+              `⚠️ *Action Required: Re-authenticate Your Bank Account*\n\n` +
               `🏦 Your ${bankAccount.bankName} account needs to be re-authenticated.\n\n` +
               `Please click the link below to reconnect:\n${reauthResult.monoUrl}`;
-            
-            await whatsappService.sendMessage(bankAccount.userId.phoneNumber, message);
-            console.log(`📱 Reauth notification sent to ${bankAccount.userId.phoneNumber}`);
+
+            await whatsappService.sendMessage(
+              bankAccount.userId.phoneNumber,
+              message,
+            );
+            console.log(
+              `📱 Reauth notification sent to ${bankAccount.userId.phoneNumber}`,
+            );
           }
         }
-        
+
         // Mark account as needing reauth
         await BankAccount.findOneAndUpdate(
           { monoAccountId: accountId },
-          { isActive: false }
+          { isActive: false },
         );
         break;
       }
-      
-      case 'mono.events.account_reauthorized': {
+
+      case "mono.events.account_reauthorized": {
         // Account has been re-authenticated
         const accountId = data.account?.id || data.id;
         console.log(`✅ Account reauthorized: ${accountId}`);
-        
+
         // Reactivate account
         await BankAccount.findOneAndUpdate(
           { monoAccountId: accountId },
-          { isActive: true }
+          { isActive: true },
         );
-        
+
         // Find user and notify
-        const bankAccount = await BankAccount.findOne({ monoAccountId: accountId }).populate('userId');
+        const bankAccount = await BankAccount.findOne({
+          monoAccountId: accountId,
+        }).populate("userId");
         if (bankAccount && bankAccount.userId?.phoneNumber) {
-          const message = `✅ *Bank Account Reconnected!*\n\n` +
+          const message =
+            `✅ *Bank Account Reconnected!*\n\n` +
             `Your ${bankAccount.bankName} account has been successfully reconnected.`;
-          
-          await whatsappService.sendMessage(bankAccount.userId.phoneNumber, message);
+
+          await whatsappService.sendMessage(
+            bankAccount.userId.phoneNumber,
+            message,
+          );
         }
         break;
       }
-      
-      case 'mono.events.unlink': {
+
+      case "mono.events.unlink": {
         // Account has been unlinked
         const accountId = data.account?.id || data.id;
         console.log(`🗑️ Account unlinked: ${accountId}`);
-        
+
         // Find and notify user before deleting
-        const bankAccount = await BankAccount.findOne({ monoAccountId: accountId }).populate('userId');
-        
+        const bankAccount = await BankAccount.findOne({
+          monoAccountId: accountId,
+        }).populate("userId");
+
         if (bankAccount && bankAccount.userId?.phoneNumber) {
-          const message = `ℹ️ *Bank Account Disconnected*\n\n` +
+          const message =
+            `ℹ️ *Bank Account Disconnected*\n\n` +
             `Your ${bankAccount.bankName} account has been disconnected.\n\n` +
             `To link a new account, send "link account".`;
-          
-          await whatsappService.sendMessage(bankAccount.userId.phoneNumber, message);
+
+          await whatsappService.sendMessage(
+            bankAccount.userId.phoneNumber,
+            message,
+          );
         }
-        
+
         // Remove from database
         await BankAccount.findOneAndDelete({ monoAccountId: accountId });
         break;
       }
-      
+
       default:
         console.log(`ℹ️ Unhandled Mono webhook event: ${event}`);
     }
   } catch (error) {
-    console.error(`❌ Error processing Mono webhook (${event}):`, error.message);
+    console.error(
+      `❌ Error processing Mono webhook (${event}):`,
+      error.message,
+    );
   }
 }
 
@@ -883,5 +928,5 @@ module.exports = {
   initiatePayment,
   verifyPayment,
   handlePaymentCallback,
-  handleMonoWebhook
+  handleMonoWebhook,
 };

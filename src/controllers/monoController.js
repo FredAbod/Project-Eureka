@@ -788,22 +788,81 @@ async function processMonoWebhook(event, data) {
       }
 
       case "mono.events.account_updated": {
-        // Account data has been synced/updated
-        const accountId = data.account?.id || data.id;
-        console.log(`🔄 Account updated: ${accountId}`);
+        // Account data has been synced/updated - this event contains full account details and ref
+        // Note: Mono sends account._id not account.id
+        const accountId =
+          data.account?._id ||
+          data.account?.id ||
+          (typeof data.account === "string" ? data.account : data.id);
+        const ref = data.meta?.ref;
+        console.log(`🔄 Account updated: ${accountId}, ref: ${ref}`);
 
         if (accountId) {
-          // Update balance in database
-          const accountResult = await monoService.getAccountDetails(accountId);
+          // Check if account already exists
+          let bankAccount = await BankAccount.findOne({
+            monoAccountId: accountId,
+          });
 
-          if (accountResult.success) {
-            await BankAccount.findOneAndUpdate(
-              { monoAccountId: accountId },
-              {
-                balance: accountResult.account.balance,
-                updatedAt: new Date(),
-              },
+          // Extract user from ref if available and account doesn't exist yet
+          let userId = null;
+          let phoneNumber = null;
+
+          if (ref && ref.startsWith("user_")) {
+            userId = ref.replace("user_", "");
+            const user = await User.findById(userId);
+            if (user) {
+              phoneNumber = user.phoneNumber;
+            }
+          }
+
+          // If account doesn't exist and we have user + full account data, create it
+          if (
+            !bankAccount &&
+            userId &&
+            data.account &&
+            typeof data.account === "object"
+          ) {
+            bankAccount = new BankAccount({
+              userId: userId,
+              monoAccountId: accountId,
+              accountNumber: data.account.accountNumber,
+              accountName: data.account.name,
+              bankName: data.account.institution?.name,
+              bankCode: data.account.institution?.bankCode,
+              balance: data.account.balance,
+              currency: data.account.currency,
+              accountType: data.account.type,
+              isActive: true,
+              lastSynced: new Date(),
+            });
+
+            await bankAccount.save();
+            console.log(
+              `✅ Bank account saved to database: ${data.account.institution?.name}`,
             );
+
+            // Add to user's linked accounts
+            await User.findByIdAndUpdate(userId, {
+              $addToSet: { linkedAccounts: bankAccount._id },
+            });
+
+            // Send WhatsApp notification
+            if (phoneNumber) {
+              const message =
+                `✅ *Bank Account Linked Successfully!*\n\n` +
+                `🏦 Bank: ${data.account.institution?.name}\n` +
+                `📄 Account: ****${data.account.accountNumber?.slice(-4)}\n` +
+                `💰 Balance: ${data.account.currency} ${(data.account.balance / 100).toLocaleString()}\n\n` +
+                `You can now check your balance and transactions through WhatsApp!`;
+
+              await whatsappService.sendMessage(phoneNumber, message);
+              console.log(`📱 WhatsApp notification sent to ${phoneNumber}`);
+            }
+          } else if (bankAccount) {
+            // Update existing account with latest data
+            bankAccount.balance = data.account?.balance || bankAccount.balance;
+            bankAccount.lastSynced = new Date();
+            await bankAccount.save();
             console.log(`✅ Account balance updated in database`);
           }
         }

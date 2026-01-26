@@ -7,6 +7,10 @@ const monoService = require("../services/monoService");
 const User = require("../models/User");
 const BankAccount = require("../models/BankAccount");
 
+// In-memory store for pending account links (maps email -> userId)
+// In production, consider using Redis for multi-instance support
+const pendingAccountLinks = new Map();
+
 /**
  * Start bank account linking process
  * POST /api/mono/initiate
@@ -41,6 +45,23 @@ const initiateAccountLinking = async (req, res) => {
 
     if (!result.success) {
       return res.status(500).json(result);
+    }
+
+    // Store pending link so we can find user when webhook arrives
+    // Key by email (lowercase) since Mono has the customer email
+    pendingAccountLinks.set(email.toLowerCase(), {
+      userId: user._id.toString(),
+      phoneNumber: user.phoneNumber,
+      timestamp: Date.now(),
+    });
+    console.log(`📝 Stored pending account link for ${email}`);
+
+    // Clean up old pending links (older than 1 hour)
+    const ONE_HOUR = 60 * 60 * 1000;
+    for (const [key, value] of pendingAccountLinks.entries()) {
+      if (Date.now() - value.timestamp > ONE_HOUR) {
+        pendingAccountLinks.delete(key);
+      }
     }
 
     res.json({
@@ -743,7 +764,7 @@ async function processMonoWebhook(event, data) {
           // Fetch account details from Mono
           const accountResult = await monoService.getAccountDetails(accountId);
 
-          // If we don't have userId from ref, try to find from session or fallback
+          // If we don't have userId from ref, try to find from pending links
           // This handles cases where Mono doesn't send ref in account_connected
           if (accountResult.success && !userId) {
             // Check if account already exists (maybe from a previous attempt)
@@ -757,11 +778,34 @@ async function processMonoWebhook(event, data) {
               return;
             }
 
-            // Try to find the most recently active user who doesn't have this account linked yet
-            // This is a fallback - proper linking happens in account_updated with ref
-            console.log(
-              `ℹ️ No ref provided, waiting for account_updated webhook with full data`,
-            );
+            // Try to find the user from pending links using account holder name or email
+            // The account name from Mono might match what we stored
+            console.log(`🔍 Looking up pending link for account...`);
+
+            // Check all pending links - we'll match by most recent if multiple
+            let bestMatch = null;
+            for (const [email, linkData] of pendingAccountLinks.entries()) {
+              // Use the most recent pending link (within last hour)
+              const ONE_HOUR = 60 * 60 * 1000;
+              if (Date.now() - linkData.timestamp < ONE_HOUR) {
+                if (!bestMatch || linkData.timestamp > bestMatch.timestamp) {
+                  bestMatch = { email, ...linkData };
+                }
+              }
+            }
+
+            if (bestMatch) {
+              userId = bestMatch.userId;
+              phoneNumber = bestMatch.phoneNumber;
+              console.log(`✅ Found pending link for user: ${userId}`);
+
+              // Remove from pending links after successful match
+              pendingAccountLinks.delete(bestMatch.email);
+            } else {
+              console.log(
+                `⚠️ No pending account link found, cannot save account`,
+              );
+            }
           }
 
           if (accountResult.success && userId) {

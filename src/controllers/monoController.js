@@ -833,6 +833,12 @@ async function processMonoWebhook(event, data) {
               console.log(
                 `✅ Bank account saved to database: ${accountResult.account.institution.name}`,
               );
+
+              // Add bank account to user's linkedAccounts array
+              await User.findByIdAndUpdate(userId, {
+                $addToSet: { linkedAccounts: bankAccount._id },
+              });
+              console.log(`✅ Added bank account to user's linkedAccounts`);
             }
 
             // Send WhatsApp notification to user

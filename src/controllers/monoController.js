@@ -743,6 +743,27 @@ async function processMonoWebhook(event, data) {
           // Fetch account details from Mono
           const accountResult = await monoService.getAccountDetails(accountId);
 
+          // If we don't have userId from ref, try to find from session or fallback
+          // This handles cases where Mono doesn't send ref in account_connected
+          if (accountResult.success && !userId) {
+            // Check if account already exists (maybe from a previous attempt)
+            const existingAccount = await BankAccount.findOne({
+              monoAccountId: accountId,
+            });
+            if (existingAccount) {
+              console.log(
+                `ℹ️ Account already exists in database, skipping save`,
+              );
+              return;
+            }
+
+            // Try to find the most recently active user who doesn't have this account linked yet
+            // This is a fallback - proper linking happens in account_updated with ref
+            console.log(
+              `ℹ️ No ref provided, waiting for account_updated webhook with full data`,
+            );
+          }
+
           if (accountResult.success && userId) {
             // Check if account already exists
             const existingAccount = await BankAccount.findOne({

@@ -1,19 +1,38 @@
-/**
- * Account Connection Service
- * Handles linking bank accounts
- */
+const User = require("../models/User");
 
 class AccountConnectionService {
   async getConnectionStatus(phoneNumber) {
-    return { connected: true, message: "Account connected" };
+    try {
+      const user = await User.findOne({ phoneNumber });
+
+      if (!user) {
+        return { connected: false, message: "User not found" };
+      }
+
+      // Check if user has any linked accounts
+      const isConnected = user.linkedAccounts && user.linkedAccounts.length > 0;
+
+      return {
+        connected: isConnected,
+        message: isConnected ? "Account connected" : "Not connected",
+      };
+    } catch (error) {
+      console.error("Get connection status error:", error);
+      return { connected: false, message: "Error checking status" };
+    }
   }
 
   async isAccountConnected(phoneNumber) {
-    return true;
+    const status = await this.getConnectionStatus(phoneNumber);
+    return status.connected;
   }
 
   async initiateConnection(phoneNumber) {
-    return { success: true, message: "Connection link sent" };
+    return {
+      success: true,
+      message:
+        "To connect your account, please use the legitimate Eureka app or wait for the integration to be fully live.",
+    };
   }
 
   async cancelConnection(phoneNumber) {

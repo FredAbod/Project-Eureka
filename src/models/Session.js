@@ -18,6 +18,24 @@ const sessionSchema = new mongoose.Schema({
     type: Object,
     default: {},
   },
+  messages: [
+    {
+      role: {
+        type: String,
+        enum: ["user", "assistant", "system", "function"],
+        required: true,
+      },
+      content: {
+        type: String,
+        required: true,
+      },
+      name: String,
+      timestamp: {
+        type: Date,
+        default: Date.now,
+      },
+    },
+  ],
   lastActivity: {
     type: Date,
     default: Date.now,

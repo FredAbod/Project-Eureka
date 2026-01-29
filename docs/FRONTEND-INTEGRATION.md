@@ -61,8 +61,15 @@ The API returns a structured object. You MUST handle the `action` field to trigg
 
 The `Session` model handles the sync between WhatsApp and Web. If a user connects their account via the Mono link:
 
-- Use a **Visibility Change** event or **Focus** event on the browser window to refresh the chat history.
-- This ensures the bot can say "Thanks! I see you've connected" once the user returns from the Mono pop-up.
+1. **Redirection**: The backend will redirect the user back to `MONO_REDIRECT_URL` (e.g., `http://localhost:3000/chat`) with the following query parameters:
+   - `status`: `success` or `failed`
+   - `message`: Descriptive message of the result
+   - `accountId`: The linked Mono Account ID (on success)
+2. **Frontend Handling**:
+   - Check for these query parameters on page load.
+   - If `status=success`, show a success toast and refresh the user's linked accounts list.
+   - If `status=failed`, show an error toast with the `message`.
+3. **Visibility Sync**: Use a **Visibility Change** event or **Focus** event on the browser window to refresh the chat history. This ensures the bot can say "Thanks! I see you've connected" once the user returns from the Mono pop-up.
 
 ## 4. Error Handling
 
@@ -80,8 +87,8 @@ The `Session` model handles the sync between WhatsApp and Web. If a user connect
 No Field-Level Encryption: While the whole DB might be encrypted at rest, sensitive fields like refreshTokenHash are only hashed.
 Recommendation: Use Mongoose encryption plugins to encrypt the phoneNumber and email fields specifically.
 Security Checklist for Production
- Implement httpOnly cookies.
- Add CORS whitelist for production domains only.
- Enable Mongoose Field-Level Encryption.
- Setup Sentry for security event monitoring.
- Implement PII scrubbing in chat history.
+Implement httpOnly cookies.
+Add CORS whitelist for production domains only.
+Enable Mongoose Field-Level Encryption.
+Setup Sentry for security event monitoring.
+Implement PII scrubbing in chat history.

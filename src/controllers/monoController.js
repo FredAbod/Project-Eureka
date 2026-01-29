@@ -98,69 +98,61 @@ const handleCallback = async (req, res) => {
       `📥 Mono callback: status=${status}, reason=${reason}, code=${code ? "present" : "missing"}, ref=${reference}`,
     );
 
+    const redirectUrl =
+      process.env.MONO_REDIRECT_URL || "http://localhost:3000/chat";
+
     // Handle failed linking
     if (status === "failed") {
-      return res.status(400).json({
-        success: false,
-        message: "Account linking failed",
-        reason: reason || "Unknown error",
-      });
+      console.warn(`❌ Mono account linking failed: ${reason}`);
+      return res.redirect(
+        `${redirectUrl}?status=failed&message=${encodeURIComponent(reason || "Account linking failed")}`,
+      );
     }
 
     // Handle successful linking (status=linked)
-    if (status === "linked" && !code) {
-      // In sandbox mode, might not get a code - show success page
-      // In production with WhatsApp, you'd send a message to the user
-      return res.json({
-        success: true,
-        message:
-          "Account linked successfully! You can now use the /link-account endpoint with the code from Mono webhook.",
-        status: status,
-        reason: reason,
-        reference: reference,
-        note: "For production, set up Mono webhooks to receive the account ID automatically.",
-      });
+    if (status === "linked") {
+      if (!code) {
+        // In sandbox mode, might not get a code - just redirect
+        console.log("✅ Mono account linked (Sandbox/No Code)");
+        return res.redirect(
+          `${redirectUrl}?status=success&message=Account+linked+successfully`,
+        );
+      }
+
+      // Exchange code for account ID
+      try {
+        const tokenResult = await monoService.exchangeToken(code);
+        if (tokenResult.success) {
+          const accountId = tokenResult.accountId;
+          console.log(`✅ Mono account linked: ${accountId}`);
+
+          // Optionally link it here or wait for webhook
+          // For now, redirect with accountId so frontend knows it worked
+          return res.redirect(
+            `${redirectUrl}?status=success&message=Account+linked+successfully&accountId=${accountId}`,
+          );
+        } else {
+          return res.redirect(
+            `${redirectUrl}?status=failed&message=${encodeURIComponent(tokenResult.error || "Token exchange failed")}`,
+          );
+        }
+      } catch (tokenError) {
+        console.error("❌ Token exchange error:", tokenError);
+        return res.redirect(
+          `${redirectUrl}?status=failed&message=Token+exchange+error`,
+        );
+      }
     }
 
-    if (!code) {
-      return res.status(400).json({
-        success: false,
-        message: "Authorization code is required",
-      });
-    }
-
-    // Exchange code for account ID
-    const tokenResult = await monoService.exchangeToken(code);
-
-    if (!tokenResult.success) {
-      return res.status(500).json(tokenResult);
-    }
-
-    const accountId = tokenResult.accountId;
-
-    // Fetch account details
-    const accountResult = await monoService.getAccountDetails(accountId);
-
-    if (!accountResult.success) {
-      return res.status(500).json(accountResult);
-    }
-
-    // TODO: Extract user ID from ref parameter and save to database
-    // For WhatsApp integration, send the account details to the user via WhatsApp
-
-    res.json({
-      success: true,
-      message: "Account linked successfully!",
-      accountId: accountId,
-      account: accountResult.account,
-    });
+    // Default redirect for other statuses
+    return res.redirect(
+      `${redirectUrl}?status=info&message=Linking+status:+${status}`,
+    );
   } catch (error) {
     console.error("❌ Error in handleCallback:", error);
-    res.status(500).json({
-      success: false,
-      message: "Internal server error",
-      error: error.message,
-    });
+    const redirectUrl =
+      process.env.MONO_REDIRECT_URL || "http://localhost:3000/chat";
+    res.redirect(`${redirectUrl}?status=error&message=Internal+server+error`);
   }
 };
 

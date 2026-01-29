@@ -41,7 +41,6 @@ async function register(userData) {
     });
 
     if (existingUser) {
-      // Generic error - don't reveal which field exists
       logAuthEvent({
         event: "registration_duplicate",
         phoneNumber,
@@ -50,9 +49,12 @@ async function register(userData) {
         metadata: { reason: "user_exists" },
       });
 
+      // Provide helpful message without revealing which field exists
       return {
         success: false,
-        error: "registration_failed",
+        error: "account_exists",
+        message:
+          "An account with this phone number or email already exists. Please login instead.",
       };
     }
 
@@ -78,6 +80,7 @@ async function register(userData) {
     // Return minimal data - don't expose internal IDs externally
     return {
       success: true,
+      message: "Account created successfully. You can now login.",
       data: {
         userId: user._id.toString(),
         phoneNumber: user.phoneNumber,
@@ -94,9 +97,20 @@ async function register(userData) {
       details: { error: error.message },
     });
 
+    // Handle MongoDB duplicate key error (fallback)
+    if (error.code === 11000) {
+      return {
+        success: false,
+        error: "account_exists",
+        message:
+          "An account with this phone number or email already exists. Please login instead.",
+      };
+    }
+
     return {
       success: false,
       error: "registration_failed",
+      message: "Unable to create account. Please try again later.",
     };
   }
 }

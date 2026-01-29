@@ -1,4 +1,5 @@
 const User = require("../models/User");
+const monoService = require("./monoService");
 
 class AccountConnectionService {
   async getConnectionStatus(phoneNumber) {
@@ -28,11 +29,41 @@ class AccountConnectionService {
   }
 
   async initiateConnection(phoneNumber) {
-    return {
-      success: true,
-      message:
-        "To connect your account, please use the legitimate Eureka app or wait for the integration to be fully live.",
-    };
+    try {
+      const user = await User.findOne({ phoneNumber });
+      if (!user) {
+        return { success: false, message: "User not found" };
+      }
+
+      const baseUrl = process.env.BASE_URL_API || "http://localhost:4000";
+      const redirectUrl = `${baseUrl}/api/mono/callback`;
+
+      const result = await monoService.initiateAccountLinking(
+        { name: user.name, email: user.email },
+        redirectUrl,
+        phoneNumber, // Use phone as reference
+      );
+
+      if (result.success) {
+        return {
+          success: true,
+          message: `Please use this link to securely connect your bank account: ${result.monoUrl}`,
+          monoUrl: result.monoUrl,
+        };
+      } else {
+        return {
+          success: false,
+          message:
+            "Sorry, I couldn't generate a connection link right now. Please try again later.",
+        };
+      }
+    } catch (error) {
+      console.error("Initiate connection error:", error);
+      return {
+        success: false,
+        message: "Server error while initiating connection.",
+      };
+    }
   }
 
   async cancelConnection(phoneNumber) {

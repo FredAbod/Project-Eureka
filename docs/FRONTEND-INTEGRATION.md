@@ -8,8 +8,18 @@ Your frontend must handle two tokens: `accessToken` (short-lived) and `refreshTo
 
 ### Best Practices for Security
 
-> [!WARNING]
-> **DO NOT store tokens in localStorage.** Use an in-memory variable for the `accessToken` and manage the `refreshToken` via secure storage or `httpOnly` cookies if possible.
+### Best Practices for Security & Redirects
+
+To prevent users from being logged out after the Mono redirect:
+
+1. **Option A (Secure)**: Store the `refreshToken` in an `HttpOnly` cookie (server-side).
+2. **Option B (Easier)**: Store the `refreshToken` in `localStorage` temporarily.
+
+**Recommended Flow:**
+
+- When user logs in, save `refreshToken` to storage.
+- When user returns from Mono redirect (`/chat?status=success`), check if `accessToken` is missing.
+- If missing, use the stored `refreshToken` to call `POST /api/auth/refresh` and silently restore the session.
 
 ## 2. Core Chat API
 

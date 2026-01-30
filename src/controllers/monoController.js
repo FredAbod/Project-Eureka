@@ -126,8 +126,56 @@ const handleCallback = async (req, res) => {
           const accountId = tokenResult.accountId;
           console.log(`✅ Mono account linked: ${accountId}`);
 
-          // Optionally link it here or wait for webhook
-          // For now, redirect with accountId so frontend knows it worked
+          // Extract User ID from reference
+          let userId = null;
+          if (reference && reference.startsWith("user_")) {
+            userId = reference.replace("user_", "");
+          }
+
+          if (userId) {
+            // 1. Fetch Account Details
+            const accountDetails =
+              await monoService.getAccountDetails(accountId);
+
+            if (accountDetails.success) {
+              // 2. Create/Update BankAccount
+              const accData = accountDetails.account;
+
+              let bankAccount = await BankAccount.findOne({
+                monoAccountId: accountId,
+              });
+              if (!bankAccount) {
+                bankAccount = new BankAccount({
+                  userId: userId,
+                  monoAccountId: accountId,
+                  accountNumber: accData.accountNumber,
+                  accountName: accData.name,
+                  bankName: accData.institution.name,
+                  bankCode: accData.institution.bankCode,
+                  balance: accData.balance,
+                  currency: accData.currency,
+                  accountType: accData.type,
+                  isActive: true,
+                  lastSynced: new Date(),
+                });
+                await bankAccount.save();
+              } else {
+                // Update existing
+                bankAccount.balance = accData.balance;
+                bankAccount.lastSynced = new Date();
+                await bankAccount.save();
+              }
+
+              // 3. Link to User
+              await User.findByIdAndUpdate(userId, {
+                $addToSet: { linkedAccounts: bankAccount._id },
+              });
+
+              console.log(`💾 Saved account ${accountId} for user ${userId}`);
+            }
+          }
+
+          // Redirect with accountId
           return res.redirect(
             `${redirectUrl}?status=success&message=Account+linked+successfully&accountId=${accountId}`,
           );

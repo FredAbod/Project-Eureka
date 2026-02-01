@@ -35,13 +35,15 @@ class AccountConnectionService {
         return { success: false, message: "User not found" };
       }
 
+      // Use the backend API URL (port 4000) for the callback
       const baseUrl = process.env.BASE_URL_API || "http://localhost:4000";
-      const redirectUrl = `${baseUrl}/api/mono/callback`;
+      const ref = `user_${user._id}`;
+      const redirectUrl = `${baseUrl}/api/mono/callback?reference=${ref}`;
 
       const result = await monoService.initiateAccountLinking(
         { name: user.name, email: user.email },
         redirectUrl,
-        phoneNumber, // Use phone as reference
+        ref, // Pass user_<id> format for webhooks
       );
 
       if (result.success) {

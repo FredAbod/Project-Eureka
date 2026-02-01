@@ -36,7 +36,7 @@ const initiateAccountLinking = async (req, res) => {
     // Generate Mono Connect URL
     // Embed reference in the URL so it comes back in the callback
     const ref = `user_${user._id}`;
-    const baseUrl = process.env.BASE_URL || "http://localhost:3000";
+    const baseUrl = process.env.BASE_URL_API || "http://localhost:4000";
     const redirectUrl = `${baseUrl}/api/mono/callback?reference=${ref}`;
 
     const result = await monoService.initiateAccountLinking(

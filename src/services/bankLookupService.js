@@ -174,12 +174,36 @@ class BankLookupService {
           verified: true,
         };
       } else {
-        // If Mono lookup fails, return without verification
-        // This allows the flow to continue in sandbox mode
+        // Mono lookup failed - likely sandbox mode
+        // Generate a mock name for testing purposes
+        const isSandbox =
+          process.env.MONO_SECRET_KEY?.startsWith("test_") ||
+          process.env.NODE_ENV !== "production";
+
+        if (isSandbox) {
+          // Create a mock account name for sandbox testing
+          const mockName = `Test User ${accountNumber.slice(-4)}`;
+          console.log(
+            `📋 Sandbox mode: Using mock name "${mockName}" for account ${accountNumber}`,
+          );
+
+          return {
+            success: true,
+            accountNumber,
+            accountName: mockName,
+            bankName,
+            bankCode,
+            verified: false,
+            sandboxMode: true,
+            warning: `Sandbox mode: Using test name "${mockName}". In production, real name will be fetched.`,
+          };
+        }
+
+        // Production mode - return without name
         return {
           success: true,
           accountNumber,
-          accountName: null, // Unknown - could not verify
+          accountName: null,
           bankName,
           bankCode,
           verified: false,

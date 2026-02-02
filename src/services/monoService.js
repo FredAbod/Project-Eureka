@@ -767,6 +767,309 @@ class MonoService {
       };
     }
   }
+
+  // ===== DIRECT DEBIT (PAYMENTS v3) =====
+
+  /**
+   * Get headers for v3 Payments API
+   */
+  getV3Headers() {
+    return {
+      "Content-Type": "application/json",
+      accept: "application/json",
+      "mono-sec-key": this.secretKey,
+    };
+  }
+
+  /**
+   * Create a Variable Direct Debit Mandate
+   * This allows debiting the user's account on-demand
+   *
+   * @param {Object} options - Mandate options
+   * @param {string} options.accountId - Mono account ID of the user
+   * @param {string} options.reference - Unique reference for this mandate
+   * @param {string} options.description - Description of the mandate
+   * @returns {Promise<Object>} - Mandate details
+   */
+  async createMandate(options) {
+    try {
+      const { accountId, reference, description } = options;
+
+      const response = await fetch(
+        "https://api.withmono.com/v3/payments/mandates",
+        {
+          method: "POST",
+          headers: this.getV3Headers(),
+          body: JSON.stringify({
+            debit_type: "variable",
+            account: accountId,
+            reference: reference,
+            description: description || "Eureka AI Transfer Mandate",
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.warn("❌ Mandate creation failed:", data.message);
+        return {
+          success: false,
+          error: data.message || "Failed to create mandate",
+        };
+      }
+
+      console.log("✅ Mandate created:", data.data?.id);
+
+      return {
+        success: true,
+        mandateId: data.data?.id,
+        status: data.data?.status,
+        readyToDebit: data.data?.ready_to_debit || false,
+        data: data.data,
+      };
+    } catch (error) {
+      console.error("❌ Error creating mandate:", error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Get mandate details and status
+   *
+   * @param {string} mandateId - Mandate ID (starts with mmc_)
+   * @returns {Promise<Object>} - Mandate details
+   */
+  async getMandate(mandateId) {
+    try {
+      const response = await fetch(
+        `https://api.withmono.com/v3/payments/mandates/${mandateId}`,
+        {
+          method: "GET",
+          headers: this.getV3Headers(),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.message || "Failed to get mandate",
+        };
+      }
+
+      return {
+        success: true,
+        mandateId: data.data?.id,
+        status: data.data?.status,
+        readyToDebit: data.data?.ready_to_debit || false,
+        data: data.data,
+      };
+    } catch (error) {
+      console.error("❌ Error getting mandate:", error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Check if account has sufficient balance for debit
+   * This costs NGN 10-50 depending on query type
+   *
+   * @param {string} mandateId - Mandate ID
+   * @param {number} amount - Amount in Kobo (optional - if provided, checks sufficiency)
+   * @returns {Promise<Object>} - Balance info
+   */
+  async checkMandateBalance(mandateId, amount = null) {
+    try {
+      let url = `https://api.withmono.com/v3/payments/mandates/${mandateId}/balance-inquiry`;
+      if (amount) {
+        url += `?amount=${amount}`;
+      }
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: this.getV3Headers(),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.warn("❌ Balance inquiry failed:", data.message);
+        return {
+          success: false,
+          error: data.message || "Balance inquiry failed",
+        };
+      }
+
+      console.log("✅ Balance inquiry successful:", data.data);
+
+      return {
+        success: true,
+        hasSufficientBalance: data.data?.has_sufficient_balance,
+        accountBalance: data.data?.account_balance,
+        accountDetails: data.data?.account_details,
+      };
+    } catch (error) {
+      console.error("❌ Error checking balance:", error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Debit user's account and send to beneficiary
+   * This is the core transfer function
+   *
+   * @param {Object} options - Debit options
+   * @param {string} options.mandateId - Mandate ID (starts with mmc_)
+   * @param {number} options.amount - Amount in Kobo (e.g., 100000 = ₦1,000)
+   * @param {string} options.reference - Unique reference for this transaction
+   * @param {string} options.narration - Transaction description
+   * @param {Object} options.beneficiary - Recipient details
+   * @param {string} options.beneficiary.nuban - Recipient account number
+   * @param {string} options.beneficiary.nipCode - Recipient bank NIP code
+   * @param {string} options.feeBearer - 'business' or 'customer' (default: business)
+   * @returns {Promise<Object>} - Transaction result
+   */
+  async debitWithBeneficiary(options) {
+    try {
+      const {
+        mandateId,
+        amount,
+        reference,
+        narration,
+        beneficiary,
+        feeBearer = "business",
+      } = options;
+
+      const payload = {
+        amount: amount, // in Kobo
+        reference: reference,
+        narration: narration || "Transfer via Eureka AI",
+        fee_bearer: feeBearer,
+      };
+
+      // Add beneficiary if provided (requires Mono approval)
+      if (beneficiary) {
+        payload.beneficiary = {
+          nuban: beneficiary.nuban,
+          nip_code: beneficiary.nipCode,
+        };
+      }
+
+      const response = await fetch(
+        `https://api.withmono.com/v3/payments/mandates/${mandateId}/debit`,
+        {
+          method: "POST",
+          headers: this.getV3Headers(),
+          body: JSON.stringify(payload),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.warn("❌ Debit failed:", data.message, data.response_code);
+        return {
+          success: false,
+          error: data.message || "Debit failed",
+          responseCode: data.response_code,
+        };
+      }
+
+      console.log("✅ Debit successful:", data.data);
+
+      return {
+        success: true,
+        status: data.data?.status,
+        amount: data.data?.amount,
+        reference: data.data?.reference_number,
+        fee: data.data?.fee,
+        sessionId: data.data?.session_id,
+        accountDetails: data.data?.account_details,
+        beneficiary: data.data?.beneficiary,
+        data: data.data,
+      };
+    } catch (error) {
+      console.error("❌ Error debiting account:", error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Direct Payout (alternative to Direct Debit)
+   * Sends money directly without mandate - simpler flow
+   *
+   * @param {Object} options - Payout options
+   * @param {number} options.amount - Amount in Kobo
+   * @param {string} options.accountNumber - Recipient account number
+   * @param {string} options.bankCode - Recipient bank code
+   * @param {string} options.reference - Unique reference
+   * @param {string} options.narration - Description
+   * @returns {Promise<Object>} - Payout result
+   */
+  async initiatePayout(options) {
+    try {
+      const { amount, accountNumber, bankCode, reference, narration } = options;
+
+      const response = await fetch(
+        "https://api.withmono.com/v2/payments/initiate",
+        {
+          method: "POST",
+          headers: this.getHeaders(),
+          body: JSON.stringify({
+            amount: amount,
+            type: "onetime-debit",
+            method: "direct-debit",
+            description: narration || "Payout via Eureka AI",
+            reference: reference,
+            account: {
+              account_number: accountNumber,
+              bank_code: bankCode,
+            },
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.warn("❌ Payout initiation failed:", data.message);
+        return {
+          success: false,
+          error: data.message || "Payout failed",
+        };
+      }
+
+      console.log("✅ Payout initiated:", data.data);
+
+      return {
+        success: true,
+        paymentId: data.data?.id,
+        paymentLink: data.data?.payment_link,
+        status: data.data?.status,
+        data: data.data,
+      };
+    } catch (error) {
+      console.error("❌ Error initiating payout:", error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
 }
 
 module.exports = new MonoService();

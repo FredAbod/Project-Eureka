@@ -28,7 +28,13 @@ async function processMessage(params) {
 
     // Check if user has pending transaction requiring confirmation
     if (session.pendingTransaction) {
-      return await handlePendingTransaction(session, message, phoneNumber, ip);
+      return await handlePendingTransaction(
+        session,
+        message,
+        phoneNumber,
+        ip,
+        userId,
+      );
     }
 
     // Get conversation history for context
@@ -53,6 +59,7 @@ async function processMessage(params) {
         conversationHistory,
         phoneNumber,
         ip,
+        userId, // Pass the real userId from JWT auth
       );
     }
 
@@ -102,11 +109,16 @@ async function executeFunctionCall(
   conversationHistory,
   phoneNumber,
   ip,
+  userId, // Real userId from JWT auth
 ) {
   const functionName = aiResponse.function;
   const args = aiResponse.arguments;
 
-  console.info("Web chat executing function", { function: functionName, args });
+  console.info("Web chat executing function", {
+    function: functionName,
+    args,
+    userId,
+  });
 
   try {
     let result;
@@ -148,7 +160,7 @@ async function executeFunctionCall(
             },
           };
         }
-        const accounts = await bankService.getAccountsForUser(session.userId);
+        const accounts = await bankService.getAccountsForUser(userId);
         if (!accounts || accounts.length === 0) {
           return {
             success: true,
@@ -161,7 +173,7 @@ async function executeFunctionCall(
         result = { accounts };
 
         logBankingOperation({
-          userId: session.userId,
+          userId,
           phoneNumber,
           action: "check_balance",
           status: "success",
@@ -180,7 +192,7 @@ async function executeFunctionCall(
             },
           };
         }
-        const txs = await bankService.getTransactionsForUser(session.userId);
+        const txs = await bankService.getTransactionsForUser(userId);
         if (!txs || txs.length === 0) {
           return {
             success: true,
@@ -193,7 +205,7 @@ async function executeFunctionCall(
         result = { transactions: txs.slice(0, 10) };
 
         logBankingOperation({
-          userId: session.userId,
+          userId,
           phoneNumber,
           action: "get_transactions",
           status: "success",
@@ -213,7 +225,13 @@ async function executeFunctionCall(
           };
         }
         // Create pending transaction
-        return await createPendingTransaction(session, args, phoneNumber, ip);
+        return await createPendingTransaction(
+          session,
+          args,
+          phoneNumber,
+          ip,
+          userId,
+        );
 
       case "get_spending_insights":
         if (!(await accountConnectionService.isAccountConnected(phoneNumber))) {
@@ -226,7 +244,7 @@ async function executeFunctionCall(
             },
           };
         }
-        const allTxs = await bankService.getTransactionsForUser(session.userId);
+        const allTxs = await bankService.getTransactionsForUser(userId);
         result = {
           transactions: allTxs.slice(0, 30),
           timeframe: args.timeframe,
@@ -245,15 +263,13 @@ async function executeFunctionCall(
             },
           };
         }
-        const allAccounts = await bankService.getAccountsForUser(
-          session.userId,
-        );
+        const allAccounts = await bankService.getAccountsForUser(userId);
         result = {
           accounts: allAccounts,
           count: allAccounts.length,
         };
         logBankingOperation({
-          userId: session.userId,
+          userId,
           phoneNumber,
           action: "get_all_accounts",
           status: "success",
@@ -273,12 +289,10 @@ async function executeFunctionCall(
             },
           };
         }
-        const balanceData = await bankService.getAggregatedBalance(
-          session.userId,
-        );
+        const balanceData = await bankService.getAggregatedBalance(userId);
         result = balanceData;
         logBankingOperation({
-          userId: session.userId,
+          userId,
           phoneNumber,
           action: "get_total_balance",
           status: "success",
@@ -304,7 +318,7 @@ async function executeFunctionCall(
         );
         result = lookupResult;
         logBankingOperation({
-          userId: session.userId,
+          userId,
           phoneNumber,
           action: "lookup_recipient",
           status: lookupResult.success ? "success" : "failed",
@@ -359,7 +373,13 @@ async function executeFunctionCall(
 /**
  * Create pending transaction requiring confirmation
  */
-async function createPendingTransaction(session, args, phoneNumber, ip) {
+async function createPendingTransaction(
+  session,
+  args,
+  phoneNumber,
+  ip,
+  userId,
+) {
   const pendingTransaction = {
     type: "transfer",
     arguments: args,
@@ -382,7 +402,7 @@ async function createPendingTransaction(session, args, phoneNumber, ip) {
   const bankName = bank ? bank.name : recipient_bank_code;
 
   logBankingOperation({
-    userId: session.userId,
+    userId,
     phoneNumber,
     action: "transfer_initiated",
     amount,
@@ -417,7 +437,13 @@ async function createPendingTransaction(session, args, phoneNumber, ip) {
 /**
  * Handle pending transaction confirmation
  */
-async function handlePendingTransaction(session, text, phoneNumber, ip) {
+async function handlePendingTransaction(
+  session,
+  text,
+  phoneNumber,
+  ip,
+  userId,
+) {
   const pending = session.pendingTransaction;
 
   // Check if expired
@@ -436,21 +462,37 @@ async function handlePendingTransaction(session, text, phoneNumber, ip) {
   const normalized = text.toLowerCase().trim();
 
   if (normalized === "confirm" || normalized === "yes" || normalized === "y") {
-    const { from_account, to_account, amount } = pending.arguments;
+    const {
+      recipient_account_number,
+      recipient_bank_code,
+      recipient_name,
+      amount,
+    } = pending.arguments;
     await sessionRepo.updateSession(phoneNumber, { pendingTransaction: null });
+
+    // Get bank name from code
+    const bankLookupService = require("./bankLookupService");
+    const bank = bankLookupService.getBankByCode(recipient_bank_code);
+    const bankName = bank ? bank.name : recipient_bank_code;
 
     // TODO: Execute actual transfer with Mono API
     logBankingOperation({
-      userId: session.userId,
+      userId,
       phoneNumber,
       action: "transfer_completed",
       amount,
       status: "success",
       ip,
-      metadata: { from_account, to_account },
+      metadata: {
+        recipient_account_number,
+        recipient_bank_code,
+        recipient_name,
+      },
     });
 
-    const responseText = `Transfer complete! ₦${amount.toLocaleString()} transferred from ${from_account} to ${to_account}.`;
+    const recipientDisplay =
+      recipient_name || `Account ${recipient_account_number}`;
+    const responseText = `Transfer complete! ₦${amount.toLocaleString()} sent to ${recipientDisplay} at ${bankName}.`;
     await conversationService.addAssistantMessage(phoneNumber, responseText);
 
     return {
@@ -467,7 +509,7 @@ async function handlePendingTransaction(session, text, phoneNumber, ip) {
     await sessionRepo.updateSession(phoneNumber, { pendingTransaction: null });
 
     logBankingOperation({
-      userId: session.userId,
+      userId,
       phoneNumber,
       action: "transfer_cancelled",
       amount: pending.arguments.amount,

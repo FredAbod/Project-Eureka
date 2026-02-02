@@ -113,26 +113,62 @@ const handleCallback = async (req, res) => {
 
     // Handle successful linking (status=linked)
     if (status === "linked") {
+      // Extract User ID from reference
+      let userId = null;
+      if (reference && reference.startsWith("user_")) {
+        userId = reference.replace("user_", "");
+      }
+
       if (!code) {
-        // In sandbox mode, might not get a code - just redirect
+        // In sandbox mode, might not get a code - create a test account
         console.log("✅ Mono account linked (Sandbox/No Code)");
+
+        if (userId) {
+          // Create a sandbox test account
+          const sandboxAccountId = `sandbox_${Date.now()}`;
+
+          let bankAccount = await BankAccount.findOne({
+            userId,
+            bankName: "Test Bank (Sandbox)",
+          });
+          if (!bankAccount) {
+            bankAccount = new BankAccount({
+              userId: userId,
+              monoAccountId: sandboxAccountId,
+              accountNumber: "0123456789",
+              accountName: "Sandbox Test Account",
+              bankName: "Test Bank (Sandbox)",
+              bankCode: "000",
+              balance: 150000, // ₦150,000 test balance
+              currency: "NGN",
+              accountType: "savings",
+              isActive: true,
+              lastSynced: new Date(),
+            });
+            await bankAccount.save();
+
+            // Link to User
+            await User.findByIdAndUpdate(userId, {
+              $addToSet: { linkedAccounts: bankAccount._id },
+            });
+
+            console.log(`💾 Created sandbox account for user ${userId}`);
+          }
+        }
+
         return res.redirect(
           `${redirectUrl}?status=success&message=Account+linked+successfully`,
         );
       }
 
-      // Exchange code for account ID
+      // Exchange code for account ID (production mode)
       try {
         const tokenResult = await monoService.exchangeToken(code);
         if (tokenResult.success) {
           const accountId = tokenResult.accountId;
           console.log(`✅ Mono account linked: ${accountId}`);
 
-          // Extract User ID from reference
-          let userId = null;
-          if (reference && reference.startsWith("user_")) {
-            userId = reference.replace("user_", "");
-          }
+          // userId already extracted earlier
 
           if (userId) {
             // 1. Fetch Account Details

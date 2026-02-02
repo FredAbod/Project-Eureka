@@ -233,6 +233,89 @@ async function executeFunctionCall(
         };
         break;
 
+      case "get_all_accounts":
+        if (!(await accountConnectionService.isAccountConnected(phoneNumber))) {
+          return {
+            success: true,
+            data: {
+              response:
+                "You need to connect your bank account first. Would you like to start the connection process?",
+              timestamp: new Date().toISOString(),
+              action: "connection_required",
+            },
+          };
+        }
+        const allAccounts = await bankService.getAccountsForUser(
+          session.userId,
+        );
+        result = {
+          accounts: allAccounts,
+          count: allAccounts.length,
+        };
+        logBankingOperation({
+          userId: session.userId,
+          phoneNumber,
+          action: "get_all_accounts",
+          status: "success",
+          ip,
+        });
+        break;
+
+      case "get_total_balance":
+        if (!(await accountConnectionService.isAccountConnected(phoneNumber))) {
+          return {
+            success: true,
+            data: {
+              response:
+                "You need to connect your bank account first. Would you like to start the connection process?",
+              timestamp: new Date().toISOString(),
+              action: "connection_required",
+            },
+          };
+        }
+        const balanceData = await bankService.getAggregatedBalance(
+          session.userId,
+        );
+        result = balanceData;
+        logBankingOperation({
+          userId: session.userId,
+          phoneNumber,
+          action: "get_total_balance",
+          status: "success",
+          ip,
+        });
+        break;
+
+      case "lookup_recipient":
+        if (!(await accountConnectionService.isAccountConnected(phoneNumber))) {
+          return {
+            success: true,
+            data: {
+              response: "You need to connect your bank account first.",
+              timestamp: new Date().toISOString(),
+              action: "connection_required",
+            },
+          };
+        }
+        const bankLookupService = require("./bankLookupService");
+        const lookupResult = await bankLookupService.lookupAccount(
+          args.account_number,
+          args.bank_name,
+        );
+        result = lookupResult;
+        logBankingOperation({
+          userId: session.userId,
+          phoneNumber,
+          action: "lookup_recipient",
+          status: lookupResult.success ? "success" : "failed",
+          ip,
+          metadata: {
+            accountNumber: args.account_number,
+            bank: args.bank_name,
+          },
+        });
+        break;
+
       default:
         return {
           success: true,
@@ -285,7 +368,18 @@ async function createPendingTransaction(session, args, phoneNumber, ip) {
 
   await sessionRepo.updateSession(phoneNumber, { pendingTransaction });
 
-  const { from_account, to_account, amount } = args;
+  const {
+    recipient_account_number,
+    recipient_bank_code,
+    recipient_name,
+    amount,
+    from_account_id,
+  } = args;
+
+  // Get bank name from code
+  const bankLookupService = require("./bankLookupService");
+  const bank = bankLookupService.getBankByCode(recipient_bank_code);
+  const bankName = bank ? bank.name : recipient_bank_code;
 
   logBankingOperation({
     userId: session.userId,
@@ -294,20 +388,26 @@ async function createPendingTransaction(session, args, phoneNumber, ip) {
     amount,
     status: "pending_confirmation",
     ip,
-    metadata: { from_account, to_account },
+    metadata: { recipient_account_number, recipient_bank_code, recipient_name },
   });
+
+  // Build confirmation message
+  const recipientDisplay =
+    recipient_name || `Account ${recipient_account_number}`;
+  const confirmMessage = `Transfer ₦${amount.toLocaleString()} to ${recipientDisplay} at ${bankName}? Reply "confirm" or "cancel".`;
 
   return {
     success: true,
     data: {
-      response: `Transfer ₦${amount.toLocaleString()} from ${from_account} to ${to_account}? Reply "confirm" or "cancel".`,
+      response: confirmMessage,
       timestamp: new Date().toISOString(),
       requiresConfirmation: true,
       pendingAction: {
         type: "transfer",
         amount,
-        from: from_account,
-        to: to_account,
+        recipientName: recipient_name,
+        recipientAccount: recipient_account_number,
+        recipientBank: bankName,
         expiresIn: 300, // 5 minutes
       },
     },

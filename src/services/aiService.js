@@ -37,6 +37,32 @@ const bankingTools = [
   {
     type: "function",
     function: {
+      name: "get_all_accounts",
+      description:
+        "Get list of all connected bank accounts with their individual balances. Use when user asks to see their accounts or wants to know which banks are connected.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_total_balance",
+      description:
+        "Get the combined total balance across ALL connected bank accounts. Use when user asks for their total balance or overall financial position.",
+      parameters: {
+        type: "object",
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "check_balance",
       description:
         "Get the current balance of user bank accounts. Only works if account is connected.",
@@ -81,29 +107,59 @@ const bankingTools = [
   {
     type: "function",
     function: {
-      name: "transfer_money",
+      name: "lookup_recipient",
       description:
-        "Transfer money between user accounts (requires confirmation). Only works if account is connected.",
+        "Verify a recipient's bank account before transfer. ALWAYS call this before initiating a transfer to verify the account holder's name. Requires account number and bank name.",
       parameters: {
         type: "object",
         properties: {
-          from_account: {
+          account_number: {
             type: "string",
-            description: "Source account",
-            enum: ["checking", "savings"],
+            description: "The 10-digit Nigerian bank account number",
           },
-          to_account: {
+          bank_name: {
             type: "string",
-            description: "Destination account",
-            enum: ["checking", "savings"],
+            description:
+              "Name of the bank (e.g., 'Access Bank', 'GTBank', 'Zenith')",
+          },
+        },
+        required: ["account_number", "bank_name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "transfer_money",
+      description:
+        "Transfer money to a verified recipient (requires confirmation). Call lookup_recipient first to verify the account.",
+      parameters: {
+        type: "object",
+        properties: {
+          from_account_id: {
+            type: "string",
+            description:
+              "ID of the source account (from user's linked accounts)",
+          },
+          recipient_account_number: {
+            type: "string",
+            description: "Recipient's 10-digit account number",
+          },
+          recipient_bank_code: {
+            type: "string",
+            description: "Recipient's bank code",
+          },
+          recipient_name: {
+            type: "string",
+            description: "Verified recipient name from lookup",
           },
           amount: {
             type: "number",
-            description: "Amount to transfer",
-            minimum: 0.01,
+            description: "Amount to transfer in Naira",
+            minimum: 100,
           },
         },
-        required: ["from_account", "to_account", "amount"],
+        required: ["recipient_account_number", "recipient_bank_code", "amount"],
       },
     },
   },

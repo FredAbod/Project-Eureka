@@ -1,7 +1,7 @@
 /**
  * Mono Service
  * Handles all interactions with Mono API for bank account aggregation
- * 
+ *
  * Mono Documentation: https://docs.mono.co
  */
 
@@ -11,23 +11,29 @@ class MonoService {
   constructor() {
     this.secretKey = process.env.MONO_SECRET_KEY;
     this.publicKey = process.env.MONO_PUBLIC_KEY;
-    
+
     // Mono uses v2 for both sandbox and production
     // Sandbox vs production is determined by the secret key (test_ prefix for sandbox)
-    this.baseUrl = process.env.MONO_BASE_URL || 'https://api.withmono.com/v2';
+    this.baseUrl = process.env.MONO_BASE_URL || "https://api.withmono.com/v2";
 
     if (!this.secretKey) {
-      console.warn('⚠️ MONO_SECRET_KEY not set in environment variables');
+      console.warn("⚠️ MONO_SECRET_KEY not set in environment variables");
     }
     if (!this.publicKey) {
-      console.warn('⚠️ MONO_PUBLIC_KEY not set in environment variables');
+      console.warn("⚠️ MONO_PUBLIC_KEY not set in environment variables");
     }
-    
-    const isSandbox = this.secretKey && this.secretKey.startsWith('test_');
-    console.log('🔧 Mono Service initialized');
-    console.log('   Environment:', isSandbox ? '🧪 SANDBOX (test)' : '🚀 PRODUCTION (live)');
-    console.log('   Base URL:', this.baseUrl);
-    console.log('   Secret Key:', this.secretKey ? `${this.secretKey.substring(0, 20)}...` : 'NOT SET');
+
+    const isSandbox = this.secretKey && this.secretKey.startsWith("test_");
+    console.log("🔧 Mono Service initialized");
+    console.log(
+      "   Environment:",
+      isSandbox ? "🧪 SANDBOX (test)" : "🚀 PRODUCTION (live)",
+    );
+    console.log("   Base URL:", this.baseUrl);
+    console.log(
+      "   Secret Key:",
+      this.secretKey ? `${this.secretKey.substring(0, 20)}...` : "NOT SET",
+    );
   }
 
   /**
@@ -35,16 +41,16 @@ class MonoService {
    */
   getHeaders() {
     return {
-      'Content-Type': 'application/json',
-      'accept': 'application/json',
-      'mono-sec-key': this.secretKey
+      "Content-Type": "application/json",
+      accept: "application/json",
+      "mono-sec-key": this.secretKey,
     };
   }
 
   /**
    * Step 1: Initiate account linking
    * Generate a Connect URL that users can use to link their bank accounts
-   * 
+   *
    * @param {Object} customer - Customer information
    * @param {string} customer.name - Customer's full name
    * @param {string} customer.email - Customer's email
@@ -57,10 +63,10 @@ class MonoService {
       const payload = {
         customer: {
           name: customer.name,
-          email: customer.email
+          email: customer.email,
         },
-        scope: 'auth',
-        redirect_url: redirectUrl
+        scope: "auth",
+        redirect_url: redirectUrl,
       };
 
       if (ref) {
@@ -69,32 +75,32 @@ class MonoService {
 
       // Use the correct Mono API endpoint: api.withmono.com/v2/accounts/initiate
       const response = await fetch(`${this.baseUrl}/accounts/initiate`, {
-        method: 'POST',
+        method: "POST",
         headers: this.getHeaders(),
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to initiate account linking');
+        throw new Error(data.message || "Failed to initiate account linking");
       }
 
       // Response structure: { status, message, timestamp, data: { mono_url, customer, meta, ... } }
       const responseData = data.data;
-      console.log('✅ Mono Connect URL generated:', responseData.mono_url);
+      console.log("✅ Mono Connect URL generated:", responseData.mono_url);
 
       return {
         success: true,
         monoUrl: responseData.mono_url,
         customerId: responseData.customer,
-        ref: responseData.meta?.ref
+        ref: responseData.meta?.ref,
       };
     } catch (error) {
-      console.error('❌ Error initiating account linking:', error.message);
+      console.error("❌ Error initiating account linking:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -102,37 +108,37 @@ class MonoService {
   /**
    * Step 2: Exchange authorization code for Account ID
    * After user successfully links account, exchange the temporary code for permanent account ID
-   * 
+   *
    * @param {string} code - Temporary authorization code from Mono Connect
    * @returns {Promise<Object>} - Contains permanent account ID
    */
   async exchangeToken(code) {
     try {
       const response = await fetch(`${this.baseUrl}/accounts/auth`, {
-        method: 'POST',
+        method: "POST",
         headers: this.getHeaders(),
-        body: JSON.stringify({ code })
+        body: JSON.stringify({ code }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to exchange token');
+        throw new Error(data.message || "Failed to exchange token");
       }
 
       // Response structure: { status, message, timestamp, data: { id } }
       const accountId = data.data?.id || data.id;
-      console.log('✅ Account ID obtained:', accountId);
+      console.log("✅ Account ID obtained:", accountId);
 
       return {
         success: true,
-        accountId: accountId
+        accountId: accountId,
       };
     } catch (error) {
-      console.error('❌ Error exchanging token:', error.message);
+      console.error("❌ Error exchanging token:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -140,27 +146,29 @@ class MonoService {
   /**
    * Step 3: Get account details
    * Fetch detailed information about a linked bank account
-   * 
+   *
    * @param {string} accountId - Permanent account ID from Mono
    * @returns {Promise<Object>} - Account details including balance, account number, etc.
    */
   async getAccountDetails(accountId) {
     try {
       const response = await fetch(`${this.baseUrl}/accounts/${accountId}`, {
-        method: 'GET',
-        headers: this.getHeaders()
+        method: "GET",
+        headers: this.getHeaders(),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch account details');
+        throw new Error(data.message || "Failed to fetch account details");
       }
 
       const account = data.data.account;
       const meta = data.data.meta;
 
-      console.log(`✅ Account details retrieved for ${account.institution.name}`);
+      console.log(
+        `✅ Account details retrieved for ${account.institution.name}`,
+      );
 
       return {
         success: true,
@@ -175,34 +183,34 @@ class MonoService {
           institution: {
             name: account.institution.name,
             bankCode: account.institution.bank_code,
-            type: account.institution.type
-          }
+            type: account.institution.type,
+          },
         },
         meta: {
           dataStatus: meta.data_status,
           authMethod: meta.auth_method,
-          retrievedData: meta.retrieved_data
-        }
+          retrievedData: meta.retrieved_data,
+        },
       };
     } catch (error) {
-      console.error('❌ Error fetching account details:', error.message);
+      console.error("❌ Error fetching account details:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   /**
    * Get account balance
-   * 
+   *
    * @param {string} accountId - Permanent account ID from Mono
    * @returns {Promise<Object>} - Current balance
    */
   async getBalance(accountId) {
     try {
       const result = await this.getAccountDetails(accountId);
-      
+
       if (!result.success) {
         return result;
       }
@@ -210,20 +218,20 @@ class MonoService {
       return {
         success: true,
         balance: result.account.balance,
-        currency: result.account.currency
+        currency: result.account.currency,
       };
     } catch (error) {
-      console.error('❌ Error fetching balance:', error.message);
+      console.error("❌ Error fetching balance:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   /**
    * Get transaction history
-   * 
+   *
    * @param {string} accountId - Permanent account ID from Mono
    * @param {Object} options - Query options
    * @param {number} options.page - Page number (default: 1)
@@ -234,54 +242,54 @@ class MonoService {
   async getTransactions(accountId, options = {}) {
     try {
       const queryParams = new URLSearchParams();
-      if (options.page) queryParams.append('page', options.page);
-      if (options.start) queryParams.append('start', options.start);
-      if (options.end) queryParams.append('end', options.end);
+      if (options.page) queryParams.append("page", options.page);
+      if (options.start) queryParams.append("start", options.start);
+      if (options.end) queryParams.append("end", options.end);
 
       const url = `${this.baseUrl}/accounts/${accountId}/transactions?${queryParams.toString()}`;
 
       const response = await fetch(url, {
-        method: 'GET',
-        headers: this.getHeaders()
+        method: "GET",
+        headers: this.getHeaders(),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch transactions');
+        throw new Error(data.message || "Failed to fetch transactions");
       }
 
       console.log(`✅ Retrieved ${data.data.length} transactions`);
 
       return {
         success: true,
-        transactions: data.data.map(tx => ({
+        transactions: data.data.map((tx) => ({
           id: tx.id,
           narration: tx.narration,
           amount: tx.amount,
           type: tx.type, // 'debit' or 'credit'
           balance: tx.balance,
           date: tx.date,
-          category: tx.category
+          category: tx.category,
         })),
         meta: {
           total: data.meta.total,
           page: data.meta.page,
-          hasNext: !!data.meta.next
-        }
+          hasNext: !!data.meta.next,
+        },
       };
     } catch (error) {
-      console.error('❌ Error fetching transactions:', error.message);
+      console.error("❌ Error fetching transactions:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   /**
    * Get account statement (PDF)
-   * 
+   *
    * @param {string} accountId - Permanent account ID from Mono
    * @param {Object} options - Statement options
    * @param {string} options.period - Statement period (last1months, last3months, last6months, last12months)
@@ -290,149 +298,158 @@ class MonoService {
    */
   async getStatement(accountId, options = {}) {
     try {
-      const period = options.period || 'last3months';
-      const output = options.output || 'pdf';
+      const period = options.period || "last3months";
+      const output = options.output || "pdf";
 
       const response = await fetch(
         `${this.baseUrl}/accounts/${accountId}/statement?period=${period}&output=${output}`,
         {
-          method: 'GET',
-          headers: this.getHeaders()
-        }
+          method: "GET",
+          headers: this.getHeaders(),
+        },
       );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch statement');
+        throw new Error(data.message || "Failed to fetch statement");
       }
 
-      console.log('✅ Statement retrieved');
+      console.log("✅ Statement retrieved");
 
       return {
         success: true,
-        statement: data.data
+        statement: data.data,
       };
     } catch (error) {
-      console.error('❌ Error fetching statement:', error.message);
+      console.error("❌ Error fetching statement:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   /**
    * Get account identity information
-   * 
+   *
    * @param {string} accountId - Permanent account ID from Mono
    * @returns {Promise<Object>} - Identity information
    */
   async getIdentity(accountId) {
     try {
-      const response = await fetch(`${this.baseUrl}/accounts/${accountId}/identity`, {
-        method: 'GET',
-        headers: this.getHeaders()
-      });
+      const response = await fetch(
+        `${this.baseUrl}/accounts/${accountId}/identity`,
+        {
+          method: "GET",
+          headers: this.getHeaders(),
+        },
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to fetch identity');
+        throw new Error(data.message || "Failed to fetch identity");
       }
 
-      console.log('✅ Identity information retrieved');
+      console.log("✅ Identity information retrieved");
 
       return {
         success: true,
-        identity: data.data
+        identity: data.data,
       };
     } catch (error) {
-      console.error('❌ Error fetching identity:', error.message);
+      console.error("❌ Error fetching identity:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   /**
    * Unlink an account
-   * 
+   *
    * @param {string} accountId - Permanent account ID from Mono
    * @returns {Promise<Object>} - Success status
    */
   async unlinkAccount(accountId) {
     try {
-      const response = await fetch(`${this.baseUrl}/accounts/${accountId}/unlink`, {
-        method: 'POST',
-        headers: this.getHeaders()
-      });
+      const response = await fetch(
+        `${this.baseUrl}/accounts/${accountId}/unlink`,
+        {
+          method: "POST",
+          headers: this.getHeaders(),
+        },
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to unlink account');
+        throw new Error(data.message || "Failed to unlink account");
       }
 
-      console.log('✅ Account unlinked successfully');
+      console.log("✅ Account unlinked successfully");
 
       return {
         success: true,
-        message: 'Account unlinked successfully'
+        message: "Account unlinked successfully",
       };
     } catch (error) {
-      console.error('❌ Error unlinking account:', error.message);
+      console.error("❌ Error unlinking account:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   /**
    * Get list of supported banks
-   * 
+   *
    * @returns {Promise<Object>} - List of banks
    */
   async getBanks() {
     try {
       // Mono uses v3 for banks list endpoint (same for sandbox and production)
       const url = `https://api.withmono.com/v3/banks/list`;
-      
-      console.log('🔍 Fetching banks from:', url);
-      
+
+      console.log("🔍 Fetching banks from:", url);
+
       const response = await fetch(url, {
-        method: 'GET',
+        method: "GET",
         headers: {
-          'Accept': 'application/json',
-          'mono-sec-key': this.secretKey
-        }
+          Accept: "application/json",
+          "mono-sec-key": this.secretKey,
+        },
       });
 
-      const contentType = response.headers.get('content-type');
-      console.log('📄 Response status:', response.status);
-      console.log('📄 Response content-type:', contentType);
-      
+      const contentType = response.headers.get("content-type");
+      console.log("📄 Response status:", response.status);
+      console.log("📄 Response content-type:", contentType);
+
       // Get raw text first to see what we're getting
       const rawText = await response.text();
-      console.log('📄 Raw response (first 200 chars):', rawText.substring(0, 200));
-      
+      console.log(
+        "📄 Raw response (first 200 chars):",
+        rawText.substring(0, 200),
+      );
+
       // If it's not JSON, throw error with helpful message
-      if (!contentType || !contentType.includes('application/json')) {
-        console.error('❌ Received non-JSON response');
-        const isSandbox = this.secretKey && this.secretKey.startsWith('test_');
+      if (!contentType || !contentType.includes("application/json")) {
+        console.error("❌ Received non-JSON response");
+        const isSandbox = this.secretKey && this.secretKey.startsWith("test_");
         throw new Error(
-          `API returned ${contentType}. ${isSandbox ? 'Using sandbox keys - ensure you\'re hitting the correct Mono sandbox endpoint.' : 'Check if MONO_SECRET_KEY is valid.'}`
+          `API returned ${contentType}. ${isSandbox ? "Using sandbox keys - ensure you're hitting the correct Mono sandbox endpoint." : "Check if MONO_SECRET_KEY is valid."}`,
         );
       }
 
       // Parse JSON
       const data = JSON.parse(rawText);
-      console.log('📦 Response keys:', Object.keys(data));
+      console.log("📦 Response keys:", Object.keys(data));
 
       if (!response.ok) {
-        console.error('❌ API error:', data);
+        console.error("❌ API error:", data);
         throw new Error(data.message || `API error: ${response.status}`);
       }
 
@@ -443,62 +460,65 @@ class MonoService {
       } else if (data.data && Array.isArray(data.data)) {
         banks = data.data; // v2 returns { data: [...] }
       } else {
-        console.error('❌ Unexpected response structure:', data);
-        throw new Error('Unexpected API response format');
+        console.error("❌ Unexpected response structure:", data);
+        throw new Error("Unexpected API response format");
       }
 
       console.log(`✅ Retrieved ${banks.length} supported banks`);
 
       return {
         success: true,
-        banks: banks.map(bank => ({
+        banks: banks.map((bank) => ({
           id: bank.id || bank._id,
           name: bank.name,
           code: bank.code || bank.bank_code,
           type: bank.type,
-          authMethods: bank.auth_methods || []
-        }))
+          authMethods: bank.auth_methods || [],
+        })),
       };
     } catch (error) {
-      console.error('❌ Error fetching banks:', error.message);
+      console.error("❌ Error fetching banks:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   /**
    * Sync account data (trigger real-time data refresh)
-   * 
+   *
    * @param {string} accountId - Permanent account ID from Mono
    * @returns {Promise<Object>} - Sync status
    */
   async syncAccount(accountId) {
     try {
-      const response = await fetch(`${this.baseUrl}/accounts/${accountId}/sync`, {
-        method: 'POST',
-        headers: this.getHeaders()
-      });
+      const response = await fetch(
+        `${this.baseUrl}/accounts/${accountId}/sync`,
+        {
+          method: "POST",
+          headers: this.getHeaders(),
+        },
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to sync account');
+        throw new Error(data.message || "Failed to sync account");
       }
 
-      console.log('✅ Account sync initiated');
+      console.log("✅ Account sync initiated");
 
       return {
         success: true,
-        message: 'Account sync initiated',
-        code: data.code
+        message: "Account sync initiated",
+        code: data.code,
       };
     } catch (error) {
-      console.error('❌ Error syncing account:', error.message);
+      console.error("❌ Error syncing account:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -506,7 +526,7 @@ class MonoService {
   /**
    * Initiate account reauthorization
    * For accounts that require MFA or have expired credentials
-   * 
+   *
    * @param {string} accountId - Permanent account ID from Mono
    * @param {string} redirectUrl - URL to redirect after reauth
    * @param {string} ref - Optional reference ID
@@ -516,8 +536,8 @@ class MonoService {
     try {
       const payload = {
         account: accountId,
-        scope: 'reauth',
-        redirect_url: redirectUrl
+        scope: "reauth",
+        redirect_url: redirectUrl,
       };
 
       if (ref) {
@@ -525,28 +545,28 @@ class MonoService {
       }
 
       const response = await fetch(`${this.baseUrl}/accounts/initiate`, {
-        method: 'POST',
+        method: "POST",
         headers: this.getHeaders(),
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to initiate reauth');
+        throw new Error(data.message || "Failed to initiate reauth");
       }
 
-      console.log('✅ Reauth URL generated:', data.data.mono_url);
+      console.log("✅ Reauth URL generated:", data.data.mono_url);
 
       return {
         success: true,
-        monoUrl: data.data.mono_url
+        monoUrl: data.data.mono_url,
       };
     } catch (error) {
-      console.error('❌ Error initiating reauth:', error.message);
+      console.error("❌ Error initiating reauth:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -554,7 +574,7 @@ class MonoService {
   /**
    * Initiate a one-time payment
    * Generates a payment link for customers to complete payment
-   * 
+   *
    * @param {Object} options - Payment options
    * @param {number} options.amount - Amount in kobo (e.g., 20000 = ₦200)
    * @param {string} options.type - Payment type: 'onetime-debit'
@@ -577,19 +597,19 @@ class MonoService {
     try {
       const {
         amount,
-        type = 'onetime-debit',
-        method = 'account',
+        type = "onetime-debit",
+        method = "account",
         account,
         description,
         reference,
         redirectUrl,
         customer,
         meta = {},
-        split
+        split,
       } = options;
 
       if (!amount || !reference || !customer) {
-        throw new Error('Amount, reference, and customer are required');
+        throw new Error("Amount, reference, and customer are required");
       }
 
       const payload = {
@@ -602,13 +622,13 @@ class MonoService {
         customer: {
           name: customer.name,
           email: customer.email,
-          phone: customer.phone
+          phone: customer.phone,
         },
-        meta
+        meta,
       };
 
       // Add account if using account method
-      if (method === 'account' && account) {
+      if (method === "account" && account) {
         payload.account = account;
       }
 
@@ -626,30 +646,30 @@ class MonoService {
       }
 
       const response = await fetch(`${this.baseUrl}/payments/initiate`, {
-        method: 'POST',
+        method: "POST",
         headers: this.getHeaders(),
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to initiate payment');
+        throw new Error(data.message || "Failed to initiate payment");
       }
 
-      console.log('✅ Payment initiated, reference:', reference);
+      console.log("✅ Payment initiated, reference:", reference);
 
       return {
         success: true,
         paymentLink: data.data?.payment_link || data.payment_link,
         reference: reference,
-        data: data.data || data
+        data: data.data || data,
       };
     } catch (error) {
-      console.error('❌ Error initiating payment:', error.message);
+      console.error("❌ Error initiating payment:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
@@ -657,41 +677,93 @@ class MonoService {
   /**
    * Verify payment status
    * Check the status of a payment using its reference
-   * 
+   *
    * @param {string} reference - Payment reference used during initiation
    * @returns {Promise<Object>} - Payment status and details
    */
   async verifyPayment(reference) {
     try {
       if (!reference) {
-        throw new Error('Payment reference is required');
+        throw new Error("Payment reference is required");
       }
 
-      const response = await fetch(`${this.baseUrl}/payments/verify/${reference}`, {
-        method: 'GET',
-        headers: this.getHeaders()
-      });
+      const response = await fetch(
+        `${this.baseUrl}/payments/verify/${reference}`,
+        {
+          method: "GET",
+          headers: this.getHeaders(),
+        },
+      );
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to verify payment');
+        throw new Error(data.message || "Failed to verify payment");
       }
 
-      console.log('✅ Payment verified, status:', data.data?.status || data.status);
+      console.log(
+        "✅ Payment verified, status:",
+        data.data?.status || data.status,
+      );
 
       return {
         success: true,
         status: data.data?.status || data.status,
         amount: data.data?.amount || data.amount,
         reference: reference,
-        data: data.data || data
+        data: data.data || data,
       };
     } catch (error) {
-      console.error('❌ Error verifying payment:', error.message);
+      console.error("❌ Error verifying payment:", error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Lookup bank account to verify recipient before transfer
+   * Uses Mono DirectPay account lookup
+   *
+   * @param {string} accountNumber - 10-digit account number
+   * @param {string} bankCode - Bank code
+   * @returns {Promise<Object>} - Account holder name
+   */
+  async lookupBankAccount(accountNumber, bankCode) {
+    try {
+      // Mono DirectPay lookup endpoint
+      const response = await fetch(`${this.baseUrl}/lookup/account`, {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify({
+          account_number: accountNumber,
+          bank_code: bankCode,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.warn("❌ Account lookup failed:", data.message);
+        return {
+          success: false,
+          error: data.message || "Account lookup failed",
+        };
+      }
+
+      console.log("✅ Account lookup successful:", data.data?.account_name);
+
+      return {
+        success: true,
+        accountName: data.data?.account_name || data.account_name,
+        bvn: data.data?.bvn, // Partial BVN if returned
+      };
+    } catch (error) {
+      console.error("❌ Error looking up account:", error.message);
+      return {
+        success: false,
+        error: error.message,
       };
     }
   }

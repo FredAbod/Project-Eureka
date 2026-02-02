@@ -549,20 +549,23 @@ async function getChatHistory(params) {
   const { phoneNumber, limit = 20, before } = params;
 
   try {
-    // For now, return empty since conversation history is stored in-memory
-    // TODO: Persist conversation history to MongoDB for cross-channel sync
     const history =
       await conversationService.getConversationHistory(phoneNumber);
+
+    // Filter out function and system messages - only show user/assistant messages
+    const visibleMessages = history.filter(
+      (msg) => msg.role === "user" || msg.role === "assistant",
+    );
 
     return {
       success: true,
       data: {
-        messages: history.slice(0, limit).map((msg) => ({
+        messages: visibleMessages.slice(0, limit).map((msg) => ({
           role: msg.role,
           content: msg.content,
           timestamp: msg.timestamp || new Date().toISOString(),
         })),
-        hasMore: history.length > limit,
+        hasMore: visibleMessages.length > limit,
         nextCursor: null, // TODO: Implement cursor-based pagination
       },
     };

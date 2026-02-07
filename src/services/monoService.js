@@ -745,7 +745,11 @@ class MonoService {
       const data = await response.json();
 
       if (!response.ok) {
-        console.warn("❌ Account lookup failed:", data.message);
+        console.warn("❌ Mono Lookup API Error:", {
+          status: response.status,
+          statusText: response.statusText,
+          data: data,
+        });
         return {
           success: false,
           error: data.message || "Account lookup failed",

@@ -732,6 +732,10 @@ class MonoService {
    */
   async lookupBankAccount(accountNumber, bankCode) {
     try {
+      console.log(
+        `🔍 Checking Environment: Key starts with [${this.secretKey.substring(0, 5)}] isSandbox=${this.isSandbox}`,
+      );
+
       // Mono DirectPay lookup endpoint
       const response = await fetch(`${this.baseUrl}/lookup/account`, {
         method: "POST",

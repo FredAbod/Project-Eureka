@@ -27,7 +27,7 @@ const NIGERIAN_BANKS = [
   { name: "Jaiz Bank", code: "301", aliases: ["jaiz"] },
   { name: "Keystone Bank", code: "082", aliases: ["keystone"] },
   { name: "Kuda Bank", code: "090267", aliases: ["kuda"] },
-  { name: "Opay", code: "999992", aliases: ["opay"] },
+  { name: "Opay", code: "100004", aliases: ["opay", "paycom"] },
   { name: "Palmpay", code: "999991", aliases: ["palmpay", "palm pay"] },
   { name: "Polaris Bank", code: "076", aliases: ["polaris"] },
   { name: "Providus Bank", code: "101", aliases: ["providus"] },
@@ -50,7 +50,6 @@ const NIGERIAN_BANKS = [
     code: "999993",
     aliases: ["moniepoint", "monie point"],
   },
-  { name: "OPay Digital Services", code: "100004", aliases: ["opay"] },
 ];
 
 class BankLookupService {

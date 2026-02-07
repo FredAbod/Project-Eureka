@@ -43,14 +43,22 @@ const bankAccountSchema = new mongoose.Schema({
   accountType: {
     type: String,
     enum: [
+      // Lowercase variants
       "savings",
       "current",
       "domiciliary",
+      "digital_savings",
+      "wallet",
+      // Uppercase variants (Mono API returns these)
       "SAVINGS_ACCOUNT",
       "CURRENT_ACCOUNT",
       "DOMICILIARY_ACCOUNT",
+      "DIGITAL_SAVINGS_ACCOUNT",
+      "WALLET_ACCOUNT",
       "SAVINGS",
       "CURRENT",
+      // Catch-all for new types
+      "OTHER",
     ],
     default: "savings",
   },

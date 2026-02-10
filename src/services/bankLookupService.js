@@ -253,8 +253,22 @@ class BankLookupService {
         };
       }
 
-      console.warn("❌ Flutterwave resolve failed:", data.message);
-      return { success: false, error: data.message };
+      const errorMessage = data.message || "Unknown error";
+      console.warn("❌ Flutterwave resolve failed:", errorMessage);
+
+      // Check for specific test mode error
+      if (errorMessage.includes("044 is allowed")) {
+        console.warn(
+          "⚠️ Flutterwave Test Mode detected: Only Access Bank (044) is supported.",
+        );
+        return {
+          success: false,
+          error:
+            "Flutterwave Test Mode: Only Access Bank (044) can be verified. Please use Live Key for other banks.",
+        };
+      }
+
+      return { success: false, error: errorMessage };
     } catch (error) {
       console.error("❌ Flutterwave resolve error:", error.message);
       return { success: false, error: error.message };

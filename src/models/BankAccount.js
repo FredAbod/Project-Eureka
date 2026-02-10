@@ -16,6 +16,20 @@ const bankAccountSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
+  monoCustomerId: {
+    type: String,
+    required: false, // Optional for backward compatibility
+  },
+  // Direct Debit Mandate
+  mandateId: { type: String },
+  mandateReference: { type: String },
+  mandateStatus: {
+    type: String,
+    enum: ["none", "pending", "active", "cancelled", "failed"],
+    default: "none",
+  },
+  mandateUrl: { type: String }, // For authorization link if needed
+
   accountNumber: {
     type: String,
     required: true,

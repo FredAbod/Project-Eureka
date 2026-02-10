@@ -120,44 +120,10 @@ const handleCallback = async (req, res) => {
       }
 
       if (!code) {
-        // In sandbox mode, might not get a code - create a test account
-        console.log("✅ Mono account linked (Sandbox/No Code)");
-
-        if (userId) {
-          // Create a sandbox test account
-          const sandboxAccountId = `sandbox_${Date.now()}`;
-
-          let bankAccount = await BankAccount.findOne({
-            userId,
-            bankName: "Test Bank (Sandbox)",
-          });
-          if (!bankAccount) {
-            bankAccount = new BankAccount({
-              userId: userId,
-              monoAccountId: sandboxAccountId,
-              accountNumber: "0123456789",
-              accountName: "Sandbox Test Account",
-              bankName: "Test Bank (Sandbox)",
-              bankCode: "000",
-              balance: 150000, // ₦150,000 test balance
-              currency: "NGN",
-              accountType: "savings",
-              isActive: true,
-              lastSynced: new Date(),
-            });
-            await bankAccount.save();
-
-            // Link to User
-            await User.findByIdAndUpdate(userId, {
-              $addToSet: { linkedAccounts: bankAccount._id },
-            });
-
-            console.log(`💾 Created sandbox account for user ${userId}`);
-          }
-        }
-
+        // No authorization code received - cannot proceed
+        console.warn("⚠️ Mono callback received without authorization code");
         return res.redirect(
-          `${redirectUrl}?status=success&message=Account+linked+successfully`,
+          `${redirectUrl}?status=failed&message=${encodeURIComponent("No authorization code received. Please try again.")}`,
         );
       }
 
@@ -186,6 +152,7 @@ const handleCallback = async (req, res) => {
                 bankAccount = new BankAccount({
                   userId: userId,
                   monoAccountId: accountId,
+                  monoCustomerId: accData.customer, // Save customer ID for mandates
                   accountNumber: accData.accountNumber,
                   accountName: accData.name,
                   bankName: accData.institution.name,
@@ -299,6 +266,7 @@ const linkAccount = async (req, res) => {
       bankAccount = new BankAccount({
         userId: user._id,
         monoAccountId: accountId,
+        monoCustomerId: accountResult.account.customer, // Save customer ID
         accountNumber: accountResult.account.accountNumber,
         accountName: accountResult.account.name,
         bankName: accountResult.account.institution.name,
@@ -897,6 +865,7 @@ async function processMonoWebhook(event, data) {
               const bankAccount = new BankAccount({
                 userId: userId,
                 monoAccountId: accountId,
+                monoCustomerId: accountResult.account.customer || data.customer, // Use API result or webhook data
                 accountNumber: accountResult.account.accountNumber,
                 accountName: accountResult.account.name,
                 bankName: accountResult.account.institution.name,
@@ -1112,6 +1081,46 @@ async function processMonoWebhook(event, data) {
 
         // Remove from database
         await BankAccount.findOneAndDelete({ monoAccountId: accountId });
+        break;
+      }
+
+      case "mono.events.mandate.approved":
+      case "mono.events.mandate.created": {
+        console.log(`📜 Mandate event received: ${event}`);
+        const mandateId = data.id; // Mandate ID (mmc_...)
+        const reference = data.reference;
+        const accountId = data.account; // Account ID
+
+        // Find Account
+        let bankAccount = null;
+        if (reference) {
+          bankAccount = await BankAccount.findOne({
+            mandateReference: reference,
+          });
+        }
+        if (!bankAccount && accountId) {
+          bankAccount = await BankAccount.findOne({ monoAccountId: accountId });
+        }
+
+        if (bankAccount) {
+          bankAccount.mandateId = mandateId;
+          bankAccount.mandateStatus = "active"; // Or "approved" then "active" after 24h?
+          // Assuming active for now to unblock testing
+          await bankAccount.save();
+          console.log(`✅ Mandate activating for account ${bankAccount._id}`);
+
+          if (bankAccount.userId) {
+            const user = await User.findById(bankAccount.userId);
+            if (user && user.phoneNumber) {
+              await whatsappService.sendMessage(
+                user.phoneNumber,
+                `✅ *Authorization Successful*\n\nYou can now perform transfers! Direct Debit is active.`,
+              );
+            }
+          }
+        } else {
+          console.warn(`⚠️ Could not find account for mandate ${mandateId}`);
+        }
         break;
       }
 

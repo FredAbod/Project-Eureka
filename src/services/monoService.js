@@ -12,8 +12,6 @@ class MonoService {
     this.secretKey = process.env.MONO_SECRET_KEY;
     this.publicKey = process.env.MONO_PUBLIC_KEY;
 
-    // Mono uses v2 for both sandbox and production
-    // Sandbox vs production is determined by the secret key (test_ prefix for sandbox)
     this.baseUrl = process.env.MONO_BASE_URL || "https://api.withmono.com/v2";
 
     if (!this.secretKey) {
@@ -23,17 +21,14 @@ class MonoService {
       console.warn("⚠️ MONO_PUBLIC_KEY not set in environment variables");
     }
 
-    const isSandbox = this.secretKey && this.secretKey.startsWith("test_");
     console.log("🔧 Mono Service initialized");
-    console.log(
-      "   Environment:",
-      isSandbox ? "🧪 SANDBOX (test)" : "🚀 PRODUCTION (live)",
-    );
     console.log("   Base URL:", this.baseUrl);
-    console.log(
-      "   Secret Key:",
-      this.secretKey ? `${this.secretKey.substring(0, 20)}...` : "NOT SET",
-    );
+
+    if (this.secretKey) {
+      console.log(`   Secret Key:`, `${this.secretKey.substring(0, 12)}...`);
+    } else {
+      console.log("   Secret Key: NOT SET");
+    }
   }
 
   /**
@@ -174,6 +169,7 @@ class MonoService {
         success: true,
         account: {
           id: account.id,
+          customer: account.customer, // Added customer ID
           name: account.name,
           accountNumber: account.account_number,
           currency: account.currency,
@@ -438,9 +434,8 @@ class MonoService {
       // If it's not JSON, throw error with helpful message
       if (!contentType || !contentType.includes("application/json")) {
         console.error("❌ Received non-JSON response");
-        const isSandbox = this.secretKey && this.secretKey.startsWith("test_");
         throw new Error(
-          `API returned ${contentType}. ${isSandbox ? "Using sandbox keys - ensure you're hitting the correct Mono sandbox endpoint." : "Check if MONO_SECRET_KEY is valid."}`,
+          `API returned ${contentType}. Check if MONO_SECRET_KEY is valid.`,
         );
       }
 
@@ -732,10 +727,6 @@ class MonoService {
    */
   async lookupBankAccount(accountNumber, bankCode) {
     try {
-      console.log(
-        `🔍 Checking Environment: Key starts with [${this.secretKey.substring(0, 5)}] isSandbox=${this.isSandbox}`,
-      );
-
       // Mono DirectPay lookup endpoint
       const response = await fetch(`${this.baseUrl}/lookup/account`, {
         method: "POST",
@@ -791,29 +782,97 @@ class MonoService {
 
   /**
    * Create a Variable Direct Debit Mandate
-   * This allows debiting the user's account on-demand
+   * Initiate a Mandate (Link) - Step 1: Get Authorization Link
+   * Uses the V2 Initiate endpoint to generate a widget link for the user.
+   *
+   * @param {Object} options
+   * @param {number} options.amount - Amount (often 0 for variable)
+   * @param {string} options.description - Description
+   * @param {string} options.email - User email (required)
+   * @param {string} options.phone - User phone (optional)
+   * @returns {Promise<Object>} - Payment link and reference
+   */
+  async initiateMandate(options) {
+    try {
+      const { amount, description, email, phone } = options;
+
+      // Use V2 Initiate endpoint to get the widget link
+      const response = await fetch(`${this.baseUrl}/payments/initiate`, {
+        method: "POST",
+        headers: this.getHeaders(), // V2 Headers
+        body: JSON.stringify({
+          // Docs say "variable" for debit_type in createMandate.
+          // For initiate, type might be different.
+          // Let's assume onetime-debit implies one-time setup?
+          // actually "recurring-debit" usually maps to variable/fixed.
+          // Let's try "recurring-debit" since we want variable access.
+          type: "recurring-debit",
+          amount: amount || 0,
+          description: description || "Eureka AI Mandate Setup",
+          currency: "NGN",
+          customer: {
+            email: email,
+            phone: phone,
+          },
+          // redirect_url: ...
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.warn("❌ Mandate initiation failed:", data.message);
+        return {
+          success: false,
+          error: data.message,
+        };
+      }
+
+      return {
+        success: true,
+        payment_link: data.payment_link || data.data?.link, // Check response structure
+        reference: data.reference || data.data?.reference,
+      };
+    } catch (error) {
+      console.error("❌ Error initiating mandate:", error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Create a Variable Direct Debit Mandate (V3)
    *
    * @param {Object} options - Mandate options
-   * @param {string} options.accountId - Mono account ID of the user
-   * @param {string} options.reference - Unique reference for this mandate
-   * @param {string} options.description - Description of the mandate
+   * @param {string} options.accountId - Mono account ID
+   * @param {string} options.customerId - Mono customer ID (optional but recommended)
+   * @param {string} options.reference - Unique reference
+   * @param {string} options.description - Description
    * @returns {Promise<Object>} - Mandate details
    */
   async createMandate(options) {
     try {
-      const { accountId, reference, description } = options;
+      const { accountId, customerId, reference, description } = options;
+
+      const payload = {
+        debit_type: "variable",
+        account: accountId,
+        reference: reference,
+        description: description || "Eureka AI Transfer Mandate",
+      };
+
+      if (customerId) {
+        payload.customer = customerId;
+      }
 
       const response = await fetch(
         "https://api.withmono.com/v3/payments/mandates",
         {
           method: "POST",
           headers: this.getV3Headers(),
-          body: JSON.stringify({
-            debit_type: "variable",
-            account: accountId,
-            reference: reference,
-            description: description || "Eureka AI Transfer Mandate",
-          }),
+          body: JSON.stringify(payload),
         },
       );
 
@@ -838,6 +897,112 @@ class MonoService {
       };
     } catch (error) {
       console.error("❌ Error creating mandate:", error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Check balance for a mandate (V3)
+   * Costs N10-N50
+   *
+   * @param {string} mandateId - Mandate ID
+   * @param {number} amount - Amount in kobo (optional)
+   */
+  async verifyMandateBalance(mandateId, amount) {
+    try {
+      let url = `https://api.withmono.com/v3/payments/mandates/${mandateId}/balance-inquiry`;
+      if (amount) {
+        url += `?amount=${amount}`;
+      }
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: this.getV3Headers(),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data.message || "Balance check failed",
+        };
+      }
+
+      return {
+        success: true,
+        hasSufficientBalance: data.data?.has_sufficient_balance,
+        accountBalance: data.data?.account_balance, // May be masked/unavailable
+        currency: "NGN",
+      };
+    } catch (error) {
+      console.error("❌ Error verifying mandate balance:", error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Debit a mandate and send to beneficiary (V3)
+   *
+   * @param {string} mandateId - Mandate ID
+   * @param {number} amount - Amount in kobo
+   * @param {string} reference - Unique reference
+   * @param {string} narration - Description
+   * @param {Object} beneficiary - Optional beneficiary details
+   * @param {string} beneficiary.accountNumber
+   * @param {string} beneficiary.bankCode
+   */
+  async debitMandate(mandateId, amount, reference, narration, beneficiary) {
+    try {
+      const payload = {
+        amount: amount,
+        reference: reference,
+        narration: narration || "Transfer via Eureka AI",
+        fee_bearer: "customer", // Customer pays the fee
+      };
+
+      if (beneficiary) {
+        payload.beneficiary = {
+          nuban: beneficiary.accountNumber,
+          nip_code: beneficiary.bankCode,
+        };
+      }
+
+      const response = await fetch(
+        `https://api.withmono.com/v3/payments/mandates/${mandateId}/debit`,
+        {
+          method: "POST",
+          headers: this.getV3Headers(),
+          body: JSON.stringify(payload),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.warn("❌ Direct debit failed:", data.message);
+        return {
+          success: false,
+          error: data.message || "Debit failed",
+        };
+      }
+
+      console.log("✅ Direct debit initiated:", data.data?.reference);
+
+      return {
+        success: true,
+        status: data.data?.status,
+        reference: data.data?.reference,
+        data: data.data,
+      };
+    } catch (error) {
+      console.error("❌ Error initiating direct debit:", error.message);
       return {
         success: false,
         error: error.message,

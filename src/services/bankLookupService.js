@@ -173,41 +173,36 @@ class BankLookupService {
           verified: true,
         };
       } else {
-        // Mono lookup failed - likely sandbox mode
-        // Generate a mock name for testing purposes
-        const isSandbox =
-          process.env.MONO_SECRET_KEY?.startsWith("test_") ||
-          process.env.NODE_ENV !== "production";
+        // Mono lookup failed — try Flutterwave as fallback
+        console.log("⚠️ Mono lookup failed, trying Flutterwave fallback...");
 
-        if (isSandbox) {
-          // Create a mock account name for sandbox testing
-          const mockName = `Test User ${accountNumber.slice(-4)}`;
-          console.log(
-            `📋 Sandbox mode: Using mock name "${mockName}" for account ${accountNumber}`,
-          );
+        const flutterwaveResult = await this.resolveAccountFlutterwave(
+          accountNumber,
+          bankCode,
+        );
 
+        if (flutterwaveResult.success) {
           return {
             success: true,
             accountNumber,
-            accountName: mockName,
+            accountName: flutterwaveResult.accountName,
             bankName,
             bankCode,
-            verified: false,
-            sandboxMode: true,
-            warning: `Sandbox mode: Using test name "${mockName}". In production, real name will be fetched.`,
+            verified: true,
+            source: "flutterwave",
           };
         }
 
-        // Production mode - return without name
+        // Both failed — return without name
         return {
-          success: true,
+          success: false,
           accountNumber,
           accountName: null,
           bankName,
           bankCode,
           verified: false,
-          warning:
-            "Could not verify account holder name. Proceed with caution.",
+          error:
+            "Could not verify account holder name. Please check the account number and bank.",
         };
       }
     } catch (error) {
@@ -216,6 +211,53 @@ class BankLookupService {
         success: false,
         error: "Failed to look up account. Please try again.",
       };
+    }
+  }
+
+  /**
+   * Flutterwave fallback: Resolve account name
+   * @param {string} accountNumber - 10-digit account number
+   * @param {string} bankCode - Bank code (NIP code)
+   * @returns {Promise<Object>} - { success, accountName }
+   */
+  async resolveAccountFlutterwave(accountNumber, bankCode) {
+    try {
+      const flwSecretKey = process.env.FLUTTERWAVE_SECRET_KEY;
+      if (!flwSecretKey) {
+        console.warn("⚠️ FLUTTERWAVE_SECRET_KEY not set, cannot use fallback");
+        return { success: false, error: "Flutterwave key not configured" };
+      }
+
+      const response = await fetch(
+        "https://api.flutterwave.com/v3/accounts/resolve",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${flwSecretKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            account_number: accountNumber,
+            account_bank: bankCode,
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (response.ok && data.status === "success") {
+        console.log("✅ Flutterwave resolved:", data.data?.account_name);
+        return {
+          success: true,
+          accountName: data.data?.account_name,
+        };
+      }
+
+      console.warn("❌ Flutterwave resolve failed:", data.message);
+      return { success: false, error: data.message };
+    } catch (error) {
+      console.error("❌ Flutterwave resolve error:", error.message);
+      return { success: false, error: error.message };
     }
   }
 

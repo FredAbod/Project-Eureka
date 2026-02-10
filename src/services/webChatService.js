@@ -12,6 +12,9 @@ const bankService = require("./bankService");
 const accountConnectionService = require("./accountConnectionService");
 const sessionRepo = require("../repositories/sessionRepository");
 const userRepo = require("../repositories/userRepository");
+const monoService = require("./monoService"); // Added monoService
+const BankAccount = require("../models/BankAccount"); // Added BankAccount
+const User = require("../models/User"); // Added User
 const { logBankingOperation } = require("../middleware/auditLogger");
 
 /**
@@ -475,7 +478,161 @@ async function handlePendingTransaction(
     const bank = bankLookupService.getBankByCode(recipient_bank_code);
     const bankName = bank ? bank.name : recipient_bank_code;
 
-    // TODO: Execute actual transfer with Mono API
+    // --- TRANSFER EXECUTION LOGIC START ---
+
+    // 1. Get User & Account
+    const user = await User.findById(userId);
+    if (!user) {
+      await sessionRepo.updateSession(phoneNumber, {
+        pendingTransaction: null,
+      });
+      return { success: true, data: { response: "User not found." } };
+    }
+
+    // Find source account
+    const sourceAccount = await BankAccount.findOne({
+      userId,
+      isActive: true, // simplified: get first active account
+    });
+
+    if (!sourceAccount) {
+      await sessionRepo.updateSession(phoneNumber, {
+        pendingTransaction: null,
+      });
+      return {
+        success: true,
+        data: {
+          response: "No active bank account linked. Please link one first.",
+        },
+      };
+    }
+
+    // 2. Verify Recipient Account (Mono → Flutterwave fallback)
+    const bankLookupSvc = require("./bankLookupService");
+    const recipientCheck = await bankLookupSvc.lookupAccount(
+      recipient_account_number,
+      recipient_bank_code,
+    );
+
+    if (!recipientCheck.success || !recipientCheck.accountName) {
+      await sessionRepo.updateSession(phoneNumber, {
+        pendingTransaction: null,
+      });
+      const msg = `❌ Could not verify recipient account ${recipient_account_number}. Please check the details and try again.`;
+      await conversationService.addAssistantMessage(phoneNumber, msg);
+      return { success: true, data: { response: msg } };
+    }
+
+    // Use the verified name (may differ from what AI provided)
+    const verifiedRecipientName = recipientCheck.accountName;
+    console.log(`✅ Recipient verified: ${verifiedRecipientName}`);
+
+    // 3. Check Mandate (Authorization)
+    if (
+      !sourceAccount.mandateStatus ||
+      sourceAccount.mandateStatus !== "active"
+    ) {
+      console.log(
+        `⚠️ No active mandate for account ${sourceAccount._id}. Initiating...`,
+      );
+
+      const mandateResult = await monoService.initiateMandate({
+        amount: 0, // Variable
+        description: "Eureka Transfer Authorization",
+        email: user.email,
+        phone: user.phoneNumber,
+      });
+
+      if (mandateResult.success) {
+        // Update account with pending mandate
+        sourceAccount.mandateReference = mandateResult.reference;
+        sourceAccount.mandateStatus = "pending";
+        sourceAccount.mandateUrl = mandateResult.payment_link;
+        await sourceAccount.save();
+
+        await sessionRepo.updateSession(phoneNumber, {
+          pendingTransaction: null,
+        });
+
+        const authResponse =
+          `🚨 *Authorization Required*\n\n` +
+          `To securely process this transfer, you need to authorize Eureka with your bank once.\n\n` +
+          `👉 Please click here: ${mandateResult.payment_link}\n\n` +
+          `After authorizing, please request the transfer again.`;
+
+        await conversationService.addAssistantMessage(
+          phoneNumber,
+          authResponse,
+        );
+
+        return {
+          success: true,
+          data: {
+            response: authResponse,
+            timestamp: new Date().toISOString(),
+            requiresConfirmation: false,
+          },
+        };
+      } else {
+        await sessionRepo.updateSession(phoneNumber, {
+          pendingTransaction: null,
+        });
+        return {
+          success: true,
+          data: {
+            response:
+              "Failed to initiate authorization. Please try again later.",
+          },
+        };
+      }
+    }
+
+    // 3. Verify Balance (Optional but recommended)
+    const amountKobo = amount * 100;
+    const balanceCheck = await monoService.verifyMandateBalance(
+      sourceAccount.mandateId,
+      amountKobo,
+    );
+
+    if (!balanceCheck.success || balanceCheck.hasSufficientBalance === false) {
+      // Failing safe if balance check returns explicitly false
+      console.warn(
+        `❌ Insufficient funds check: ${balanceCheck.hasSufficientBalance}`,
+      );
+      // Consider allowing if check fails (api error) but blocking if false (insufficient)
+      if (balanceCheck.hasSufficientBalance === false) {
+        await sessionRepo.updateSession(phoneNumber, {
+          pendingTransaction: null,
+        });
+        const msg = `❌ Insufficient funds. Your balance is too low for this transfer.`;
+        await conversationService.addAssistantMessage(phoneNumber, msg);
+        return { success: true, data: { response: msg } };
+      }
+    }
+
+    // 4. Execute Debit (Transfer to Beneficiary)
+    const debitReference = `trn_${Date.now()}_${userId.toString().slice(-4)}`;
+    const debitResult = await monoService.debitMandate(
+      sourceAccount.mandateId,
+      amountKobo,
+      debitReference,
+      `Transfer to ${verifiedRecipientName}`,
+      {
+        accountNumber: recipient_account_number,
+        bankCode: recipient_bank_code,
+      },
+    );
+
+    if (!debitResult.success) {
+      await sessionRepo.updateSession(phoneNumber, {
+        pendingTransaction: null,
+      });
+      const msg = `❌ Transfer failed: ${debitResult.error || "Unknown error"}`;
+      await conversationService.addAssistantMessage(phoneNumber, msg);
+      return { success: true, data: { response: msg } };
+    }
+
+    // Success!
     logBankingOperation({
       userId,
       phoneNumber,
@@ -487,12 +644,12 @@ async function handlePendingTransaction(
         recipient_account_number,
         recipient_bank_code,
         recipient_name,
+        reference: debitResult.reference,
       },
     });
 
-    const recipientDisplay =
-      recipient_name || `Account ${recipient_account_number}`;
-    const responseText = `Transfer complete! ₦${amount.toLocaleString()} sent to ${recipientDisplay} at ${bankName}.`;
+    const recipientDisplay = verifiedRecipientName;
+    const responseText = `✅ Transfer complete! ₦${amount.toLocaleString()} sent to ${recipientDisplay} at ${bankName}.`;
     await conversationService.addAssistantMessage(phoneNumber, responseText);
 
     return {

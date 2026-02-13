@@ -27,6 +27,7 @@ class BankService {
         accountNumber: this.maskAccountNumber(acc.accountNumber),
         bankName: acc.bankName,
         balance: acc.balance,
+        balanceNaira: acc.balance / 100,
         currency: acc.currency,
         type: acc.accountType,
         isPrimary: acc.isPrimary,
@@ -53,6 +54,7 @@ class BankService {
       if (accounts.length === 0) {
         return {
           totalBalance: 0,
+          totalBalanceNaira: 0,
           currency: "NGN",
           accountCount: 0,
           accounts: [],
@@ -66,12 +68,14 @@ class BankService {
 
       return {
         totalBalance,
+        totalBalanceNaira: totalBalance / 100,
         currency: "NGN",
         accountCount: accounts.length,
         accounts: accounts.map((acc) => ({
           bankName: acc.bankName,
           accountNumber: this.maskAccountNumber(acc.accountNumber),
           balance: acc.balance,
+          balanceNaira: acc.balance / 100,
           type: acc.accountType,
         })),
       };
@@ -79,6 +83,7 @@ class BankService {
       console.error("Error getting aggregated balance:", error);
       return {
         totalBalance: 0,
+        totalBalanceNaira: 0,
         currency: "NGN",
         accountCount: 0,
         accounts: [],

@@ -52,7 +52,7 @@ const bankingTools = [
     function: {
       name: "get_total_balance",
       description:
-        "Get the combined total balance across ALL connected bank accounts. Use when user asks for their total balance or overall financial position.",
+        "Get the combined total balance across ALL connected bank accounts. Returns both Kobo (balance) and Naira (totalBalanceNaira) values. ALWAYS use the Naira value for display.",
       parameters: {
         type: "object",
         properties: {},
@@ -239,6 +239,10 @@ Multi-Account Support:
 Tone and Style:
 - Professional yet warm and helpful.
 - Use Nigerian Naira (₦) for all amounts.
+- IMPORTANT: The banking system returns balances in KOBO (e.g., 10000 = ₦100).
+- ALWAYS check for 'balanceNaira' or 'totalBalanceNaira' fields in the function result.
+- If 'balanceNaira' is not available, YOU MUST DIVIDE THE RAW BALANCE BY 100 before displaying it.
+- Never display the raw Kobo value as Naira.
 - Keep messages concise (2-4 lines).
 - Never make up data - use functions for real details.`;
 
@@ -384,7 +388,11 @@ async function generateResponseFromFunction(
     if (functionName === "check_balance") {
       const accounts = functionResult.accounts || [];
       const lines = accounts
-        .map((a) => `${a.name}: ₦${a.balance.toLocaleString()}`)
+        .map((a) => {
+          const amount =
+            a.balanceNaira !== undefined ? a.balanceNaira : a.balance / 100;
+          return `${a.name}: ₦${amount.toLocaleString()}`;
+        })
         .join("\n");
       return `Your account balances:\n${lines}`;
     }

@@ -274,6 +274,7 @@ class TransactionFlowService {
       description: "Eureka Transfer Authorization",
       email: user.email,
       phone: user.phoneNumber,
+      reference: `auth_${Date.now()}_${user._id.toString().slice(-4)}`,
     });
 
     if (mandateResult.success) {

@@ -11,13 +11,14 @@ class MonoMandatesService {
    */
   async initiateMandate(options) {
     try {
-      const { amount, description, email, phone } = options;
+      const { amount, description, email, phone, reference } = options;
 
       const payload = {
         type: "recurring-debit",
         amount: amount || 0,
         description: description || "Eureka AI Mandate Setup",
         currency: "NGN",
+        reference: reference || `ref_${Date.now()}`, // Fallback
         customer: { email, phone },
       };
 

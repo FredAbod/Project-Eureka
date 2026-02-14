@@ -1,6 +1,8 @@
 const aiClient = require("./client");
 const aiParser = require("./parser");
 const { getBankingTools } = require("./tools/banking");
+const memoryTools = require("./tools/memory");
+const memoryService = require("./memoryService");
 const { SYSTEM_PROMPT } = require("./prompts");
 
 /**
@@ -9,19 +11,29 @@ const { SYSTEM_PROMPT } = require("./prompts");
  */
 class AIService {
   constructor() {
-    this.tools = [...getBankingTools()];
+    this.tools = [...getBankingTools(), ...memoryTools];
   }
 
   /**
    * Process a message with AI
    * @param {string} userMessage - The user's input
    * @param {Array} conversationHistory - Context
+   * @param {string} userId - User ID for memory retrieval
    * @returns {Promise<Object>} - Structured response { type, content, ... }
    */
-  async processMessage(userMessage, conversationHistory = []) {
+  async processMessage(userMessage, conversationHistory = [], userId = null) {
+    // 0. Retrieve Memory Context
+    let systemPrompt = SYSTEM_PROMPT;
+    if (userId) {
+      const rules = await memoryService.getRelevantRules(userId, userMessage);
+      if (rules.length > 0) {
+        systemPrompt += `\n\n[USER MEMORY & PREFERENCES]\nThe user has taught you the following:\n- ${rules.join("\n- ")}\nApply these rules to your response.`;
+      }
+    }
+
     // Construct messages
     const messages = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       ...conversationHistory,
       { role: "user", content: userMessage },
     ];
@@ -29,6 +41,7 @@ class AIService {
     console.info("🤖 AI Processing Message", {
       historyLength: conversationHistory.length,
       messageLength: userMessage.length,
+      userId,
     });
 
     try {

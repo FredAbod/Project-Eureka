@@ -53,6 +53,7 @@ async function processMessage(params) {
     const aiResponse = await aiService.processMessage(
       message,
       conversationHistory,
+      userId,
     );
 
     // Handle based on response type
@@ -331,6 +332,30 @@ async function executeFunctionCall(
             accountNumber: args.account_number,
             bank: args.bank_name,
           },
+        });
+        break;
+
+      case "learn_rule":
+        const memoryService = require("./ai/memoryService");
+        const learnResult = await memoryService.learnRule(
+          userId,
+          args.key,
+          args.value,
+          args.category,
+        );
+        result = {
+          success: learnResult.success,
+          message: learnResult.success
+            ? `I've learned that "${args.key}" means "${args.value}".`
+            : "I failed to save that rule.",
+        };
+        logBankingOperation({
+          userId,
+          phoneNumber,
+          action: "learn_rule",
+          status: learnResult.success ? "success" : "failed",
+          ip,
+          metadata: { key: args.key, value: args.value },
         });
         break;
 

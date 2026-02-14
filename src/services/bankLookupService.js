@@ -244,6 +244,10 @@ class BankLookupService {
       );
 
       const data = await response.json();
+      console.log(
+        "🔍 Flutterwave Raw Response:",
+        JSON.stringify(data, null, 2),
+      );
 
       if (response.ok && data.status === "success") {
         console.log("✅ Flutterwave resolved:", data.data?.account_name);
@@ -255,6 +259,13 @@ class BankLookupService {
 
       const errorMessage = data.message || "Unknown error";
       console.warn("❌ Flutterwave resolve failed:", errorMessage);
+
+      if (errorMessage.includes("Invalid authorization key")) {
+        return {
+          success: false,
+          error: "System Error: Payment provider configuration is invalid.",
+        };
+      }
 
       // Check for specific test mode error
       if (errorMessage.includes("044 is allowed")) {
@@ -271,6 +282,17 @@ class BankLookupService {
       return { success: false, error: errorMessage };
     } catch (error) {
       console.error("❌ Flutterwave resolve error:", error.message);
+
+      if (
+        error.message &&
+        error.message.includes("Invalid authorization key")
+      ) {
+        return {
+          success: false,
+          error: "System Error: Payment provider configuration is invalid.",
+        };
+      }
+
       return { success: false, error: error.message };
     }
   }

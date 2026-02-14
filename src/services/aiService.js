@@ -109,7 +109,7 @@ const bankingTools = [
     function: {
       name: "lookup_recipient",
       description:
-        "Verify a recipient's bank account before transfer. ALWAYS call this before initiating a transfer to verify the account holder's name. Requires account number and bank name.",
+        "Verify a recipient's bank account before transfer. ALWAYS call this before initiating a transfer to verify the account holder's name. Requires account number and bank name. IF VERIFICATION FAILS, DO NOT ask for the bank name again if it was already provided. Instead, report the error to the user.",
       parameters: {
         type: "object",
         properties: {

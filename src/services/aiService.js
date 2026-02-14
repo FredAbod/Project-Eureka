@@ -298,8 +298,68 @@ async function processMessage(userMessage, conversationHistory = []) {
     }
 
     // Regular text response (no function call)
+    let content = choice.message.content || "";
+
+    // ---------------------------------------------------------
+    // FALLBACK: Detect and Handle Hallucinated Tool Calls
+    // Only attempts if no standard tool calls were detected
+    // ---------------------------------------------------------
+    const pythonTagMatch = content.match(/<\|python_tag\|>([\w_]+)\((.*?)\)/s);
+    const xmlTagMatch = content.match(/<function=(\w+)\((.*?)\)>/s);
+    const tagMatch = pythonTagMatch || xmlTagMatch;
+
+    if (tagMatch) {
+      const functionName = tagMatch[1];
+      const argsRaw = tagMatch[2];
+      console.warn("⚠️ Detected raw tool call tag in content:", {
+        functionName,
+        argsRaw,
+      });
+
+      // Attempt to parse args (very basic positional parser)
+      // This is risky but better than showing raw tags to user
+      let parsedArgs = {};
+
+      // Basic split by comma, respecting quotes is hard without a library.
+      // Simplify: assume standard CSV-like args
+      const argsList = argsRaw
+        .split(",")
+        .map((arg) => arg.trim().replace(/^["']|["']$/g, ""));
+
+      if (functionName === "lookup_recipient" && argsList.length >= 2) {
+        parsedArgs = {
+          account_number: argsList[0],
+          bank_name: argsList[1],
+        };
+        console.log("✅ Recovered lookup_recipient call from raw tag");
+
+        return {
+          type: "function_call",
+          function: functionName,
+          arguments: parsedArgs,
+          rawResponse: choice.message,
+          hallucinated: true,
+        };
+      } else if (functionName === "transfer_money") {
+        // This is too complex to map safely usually, but let's try
+        // Expected: from, recipient_u, recipient_code, recipient_name, amount
+        // Hallucinated pattern often: (account, bank, name, amount) or similar
+        console.warn("⚠️ Could not safely parse transfer_money from raw tag");
+      }
+
+      // If we couldn't parse it into a valid tool call,
+      // STRIP the tag from the content so the user doesn't see it.
+      content = content.replace(tagMatch[0], "").trim();
+
+      if (!content) {
+        // If content is empty after stripping, return a generic error
+        content =
+          "I encountered a technical glitch while processing that request. Could you please specify the account number and bank again?";
+      }
+    }
+
     console.info("AI returned text response", {
-      length: choice.message.content?.length || 0,
+      length: content.length,
     });
 
     return {

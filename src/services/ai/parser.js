@@ -93,11 +93,34 @@ class AIParser {
       }
     }
 
-    // Positional Handling (Python tag or fallback)
+    // Positional or Named Argument Handling (Python tag)
     if (pythonTagMatch) {
+      // Check for named arguments pattern (key=value)
+      if (argsRaw.includes("=")) {
+        const namedArgs = {};
+        argsRaw.split(",").forEach((pair) => {
+          const [key, val] = pair.split("=");
+          if (key && val) {
+            namedArgs[key.trim()] = val.trim().replace(/^["']|["']$/g, "");
+          }
+        });
+
+        // Smart Recovery for known functions
+        if (["transfer_money", "lookup_recipient"].includes(functionName)) {
+          console.log(`✅ Recovered named-arg tool call: ${functionName}`);
+          return {
+            type: "function_call",
+            function: functionName,
+            arguments: namedArgs,
+            rawResponse,
+            hallucinated: true,
+          };
+        }
+      }
+
+      // Fallback to positional parsing
       const argsList = parsePositional(argsRaw);
 
-      // SPECIFIC RECOVERY LOGIC - Add more functions here as needed
       if (functionName === "lookup_recipient" && argsList.length >= 2) {
         return {
           type: "function_call",
@@ -110,12 +133,6 @@ class AIParser {
           hallucinated: true,
         };
       }
-
-      if (functionName === "transfer_money" && argsList.length >= 4) {
-        // Heuristic: (account, bank, name, amount) - very unsafe but better than crash
-        // We'll log warning and return text instead of guessing too much money logic
-        console.warn("⚠️ Ignoring ambiguous transfer_money raw tag");
-      }
     }
 
     return null;
@@ -127,9 +144,9 @@ class AIParser {
   sanitizeContent(content) {
     if (!content) return "";
     let clean = content
-      .replace(/<\|python_tag\|>.*?(\)|$)/s, "")
-      .replace(/<function=.*?>.*?<\/function>/s, "") // Handle closed tags
-      .replace(/<function=.*?>/s, "") // Handle open tags
+      .replace(/<\|python_tag\|>[\s\S]*?(\)|$)/gi, "") // Global, Case-insensitive, Multiline
+      .replace(/<function=[\s\S]*?>[\s\S]*?<\/function>/gi, "")
+      .replace(/<function=[\s\S]*?>/gi, "")
       .trim();
 
     if (!clean && content.includes("python_tag")) {

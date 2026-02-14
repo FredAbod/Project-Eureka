@@ -73,7 +73,9 @@ class AIClient {
     // Pass through 400 errors (often tool use errors) for handling by the caller/parser
     if (error.status === 400) {
       // Enhance error object with failed_generation if present
-      const match = error.message.match(/"failed_generation":"(.*?)"/);
+      const match = error.message.match(
+        /"failed_generation":"((?:[^"\\]|\\.)*)"/,
+      );
       if (match) {
         error.failedGeneration = match[1]
           .replace(/\\"/g, '"')

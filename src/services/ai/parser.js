@@ -53,15 +53,13 @@ class AIParser {
     if (!content) return null;
 
     const pythonTagMatch = content.match(/<\|python_tag\|>([\w_]+)\((.*?)\)/s);
+
+    // Mathes: <function=name>{json}</function> OR <function=name({json})></function>
     const xmlJsonMatch = content.match(
-      /<function=([\w_]+)({.*?})<\/function>/s,
-    ); // <function=name{json}>
-    // Sometimes it's <function=name>{json}</function>
-    const xmlJsonMatch2 = content.match(
-      /<function=([\w_]+)>({.*?})<\/function>/s,
+      /<function=([\w_]+)(?:>|\()?({.*?})(?:\))?<\/function>/s,
     );
 
-    const tagMatch = pythonTagMatch || xmlJsonMatch || xmlJsonMatch2;
+    const tagMatch = pythonTagMatch || xmlJsonMatch;
 
     if (!tagMatch) return null;
 
@@ -77,7 +75,7 @@ class AIParser {
     let parsedArgs = {};
 
     // JSON Handling
-    if (xmlJsonMatch || xmlJsonMatch2) {
+    if (xmlJsonMatch) {
       try {
         parsedArgs = JSON.parse(argsRaw);
         console.log("✅ Recovered JSON tool call from raw tag");

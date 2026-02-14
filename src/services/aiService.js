@@ -268,7 +268,7 @@ async function processMessage(userMessage, conversationHistory = []) {
 
     // Call Groq with function calling enabled
     const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile", // Fast and accurate
+      model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile", // Configurable via .env
       messages: messages,
       tools: bankingTools,
       tool_choice: "auto", // Let AI decide when to use functions
@@ -298,64 +298,28 @@ async function processMessage(userMessage, conversationHistory = []) {
     }
 
     // Regular text response (no function call)
+    // Regular text response (no function call)
     let content = choice.message.content || "";
 
-    // ---------------------------------------------------------
-    // FALLBACK: Detect and Handle Hallucinated Tool Calls
-    // Only attempts if no standard tool calls were detected
-    // ---------------------------------------------------------
-    const pythonTagMatch = content.match(/<\|python_tag\|>([\w_]+)\((.*?)\)/s);
-    const xmlTagMatch = content.match(/<function=(\w+)\((.*?)\)>/s);
-    const tagMatch = pythonTagMatch || xmlTagMatch;
+    // Fallback: Detect and Handle Hallucinated Tool Calls
+    const fallbackResult = tryParseToolCall(content, choice.message);
+    if (fallbackResult) {
+      return fallbackResult;
+    }
 
-    if (tagMatch) {
-      const functionName = tagMatch[1];
-      const argsRaw = tagMatch[2];
-      console.warn("⚠️ Detected raw tool call tag in content:", {
-        functionName,
-        argsRaw,
-      });
+    // Strip tags if they exist but couldn't be parsed
+    content = content
+      .replace(/<\|python_tag\|>.*?(\)|$)/s, "")
+      .replace(/<function=.*?>/s, "")
+      .trim();
 
-      // Attempt to parse args (very basic positional parser)
-      // This is risky but better than showing raw tags to user
-      let parsedArgs = {};
-
-      // Basic split by comma, respecting quotes is hard without a library.
-      // Simplify: assume standard CSV-like args
-      const argsList = argsRaw
-        .split(",")
-        .map((arg) => arg.trim().replace(/^["']|["']$/g, ""));
-
-      if (functionName === "lookup_recipient" && argsList.length >= 2) {
-        parsedArgs = {
-          account_number: argsList[0],
-          bank_name: argsList[1],
-        };
-        console.log("✅ Recovered lookup_recipient call from raw tag");
-
-        return {
-          type: "function_call",
-          function: functionName,
-          arguments: parsedArgs,
-          rawResponse: choice.message,
-          hallucinated: true,
-        };
-      } else if (functionName === "transfer_money") {
-        // This is too complex to map safely usually, but let's try
-        // Expected: from, recipient_u, recipient_code, recipient_name, amount
-        // Hallucinated pattern often: (account, bank, name, amount) or similar
-        console.warn("⚠️ Could not safely parse transfer_money from raw tag");
-      }
-
-      // If we couldn't parse it into a valid tool call,
-      // STRIP the tag from the content so the user doesn't see it.
-      content = content.replace(tagMatch[0], "").trim();
-
-      if (!content) {
-        // If content is empty after stripping, return a generic error
-        content =
-          "I encountered a technical glitch while processing that request. Could you please specify the account number and bank again?";
-      }
+    if (
+      !content &&
+      choice.message.content &&
+      choice.message.content.includes("<|python_tag|>")
+    ) {
+      content =
+        "I encountered a technical glitch while processing that request. Could you please specify the account number and bank again?";
     }
 
     console.info("AI returned text response", {
@@ -364,10 +328,29 @@ async function processMessage(userMessage, conversationHistory = []) {
 
     return {
       type: "text",
-      content: choice.message.content,
+      content: content,
       rawResponse: choice.message,
     };
   } catch (error) {
+    // RECOVERY FROM GROQ 400 ERRORS (Tool Use Failed)
+    if (error.status === 400) {
+      // Try to extract failed_generation from error message
+      // Error format often: "400 {"error":{..., "failed_generation":"..."}}"
+      const match = error.message.match(/"failed_generation":"(.*?)"/);
+      if (match) {
+        const failedGen = match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n"); // Unescape
+        console.warn(
+          "⚠️ Recovering from Groq 400 error with failed_generation:",
+          failedGen,
+        );
+
+        const recoveryResult = tryParseToolCall(failedGen, {});
+        if (recoveryResult) {
+          return recoveryResult;
+        }
+      }
+    }
+
     console.error("Groq AI error:", {
       error: error.message,
       code: error.code,
@@ -423,7 +406,7 @@ async function generateResponseFromFunction(
     });
 
     const response = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
       messages: messages,
       temperature: 0.7,
       max_tokens: 400,
@@ -496,6 +479,73 @@ function getAvailableFunctions() {
     name: tool.function.name,
     description: tool.function.description,
   }));
+}
+
+/**
+ * Helper to parse raw/hallucinated tool calls
+ */
+function tryParseToolCall(content, rawResponse) {
+  if (!content) return null;
+
+  const pythonTagMatch = content.match(/<\|python_tag\|>([\w_]+)\((.*?)\)/s);
+  // Also handle: <function=name{json}> format seen in error log
+  // Format seen: <function=lookup_recipient{"..."}>
+  const xmlJsonMatch = content.match(/<function=([\w_]+)({.*?})<\/function>/s);
+  const tagMatch = pythonTagMatch || xmlJsonMatch;
+
+  if (!tagMatch) return null;
+
+  const functionName = tagMatch[1];
+  const argsRaw = tagMatch[2];
+
+  console.warn("⚠️ Detected raw tool call tag:", { functionName, argsRaw });
+
+  let parsedArgs = {};
+
+  if (xmlJsonMatch) {
+    // Format: <function=name{json}></function>
+    try {
+      // The argsRaw might need strict JSON parsing logic
+      // It is usually valid JSON
+      parsedArgs = JSON.parse(argsRaw);
+      console.log("✅ Recovered JSON tool call from raw tag");
+      return {
+        type: "function_call",
+        function: functionName,
+        arguments: parsedArgs,
+        rawResponse: rawResponse,
+        hallucinated: true,
+      };
+    } catch (e) {
+      console.warn("Failed to parse JSON in raw tag:", e.message);
+    }
+  }
+
+  // Python tag fallback (positional args)
+  if (pythonTagMatch) {
+    // Basic split by comma
+    const argsList = argsRaw
+      .split(",")
+      .map((arg) => arg.trim().replace(/^["']|["']$/g, ""));
+
+    if (functionName === "lookup_recipient" && argsList.length >= 2) {
+      parsedArgs = {
+        account_number: argsList[0],
+        bank_name: argsList[1],
+      };
+      console.log("✅ Recovered lookup_recipient call from python tag");
+
+      return {
+        type: "function_call",
+        function: functionName,
+        arguments: parsedArgs,
+        rawResponse: rawResponse,
+        hallucinated: true,
+      };
+    }
+  }
+
+  return null;
 }
 
 module.exports = {

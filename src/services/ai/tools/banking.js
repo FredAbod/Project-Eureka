@@ -144,6 +144,11 @@ const getBankingTools = () => [
             type: "string",
             description: "Recipient's bank code",
           },
+          from_account_id: {
+            type: "string",
+            description:
+              "Optional: The internal ID of the source account to debit. Use if user specifies a particular account (e.g. 'from opay').",
+          },
           recipient_name: {
             type: "string",
             description: "Verified recipient name from lookup",

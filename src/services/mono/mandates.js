@@ -14,7 +14,7 @@ class MonoMandatesService {
       const { amount, description, email, phone, reference } = options;
 
       const payload = {
-        type: "recurring-debit",
+        mandate_type: "recurring-debit", // Corrected field name
         amount: amount || 0,
         description: description || "Eureka AI Mandate Setup",
         currency: "NGN",

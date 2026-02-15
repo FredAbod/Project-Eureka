@@ -99,7 +99,9 @@ class AIService {
 
       // Call without tools for the final response to avoid loops
       const choice = await aiClient.chat(messages, [], { max_tokens: 400 });
-      return choice.message.content;
+
+      // Sanitizing content to prevent tag leaks in summary
+      return aiParser.sanitizeContent(choice.message.content);
     } catch (error) {
       console.error("Error generating function response:", error.message);
       return "I've processed that request, but I'm having trouble generating a summary right now.";

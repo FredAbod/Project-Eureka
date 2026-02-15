@@ -105,23 +105,16 @@ class AIParser {
 
     // Positional or Named Argument Handling (Python tag)
     if (pythonTagMatch) {
-      // 1. Handle Empty Args (e.g. get_total_balance())
+      // 1. Handle Empty Args (Universal Logic)
       if (!argsRaw || !argsRaw.trim()) {
-        if (
-          [
-            "get_total_balance",
-            "check_account_status",
-            "get_transactions",
-          ].includes(functionName)
-        ) {
-          return {
-            type: "function_call",
-            function: functionName,
-            arguments: {},
-            rawResponse,
-            hallucinated: true,
-          };
-        }
+        console.log(`✅ Recovered empty-arg tool call: ${functionName}`);
+        return {
+          type: "function_call",
+          function: functionName,
+          arguments: {},
+          rawResponse,
+          hallucinated: true,
+        };
       }
 
       // 2. Check for named arguments pattern (key=value)
@@ -134,21 +127,14 @@ class AIParser {
           }
         });
 
-        // Smart Recovery for known functions
-        if (
-          ["transfer_money", "lookup_recipient", "learn_rule"].includes(
-            functionName,
-          )
-        ) {
-          console.log(`✅ Recovered named-arg tool call: ${functionName}`);
-          return {
-            type: "function_call",
-            function: functionName,
-            arguments: namedArgs,
-            rawResponse,
-            hallucinated: true,
-          };
-        }
+        console.log(`✅ Recovered named-arg tool call: ${functionName}`);
+        return {
+          type: "function_call",
+          function: functionName,
+          arguments: namedArgs,
+          rawResponse,
+          hallucinated: true,
+        };
       }
 
       // Fallback to positional parsing

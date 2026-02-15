@@ -20,6 +20,10 @@ class MonoMandatesService {
         amount: amount || 0,
         description: description || "Eureka AI Mandate Setup",
         currency: "NGN",
+        start_date: new Date().toISOString().split("T")[0], // Today
+        end_date: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0], // 10 years
         reference: reference || `ref_${Date.now()}`, // Fallback
         customer: { email, phone },
       };

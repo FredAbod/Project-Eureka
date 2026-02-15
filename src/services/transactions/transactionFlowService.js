@@ -22,6 +22,35 @@ class TransactionFlowService {
       amount,
     } = args;
 
+    // 🛡️ ANTI-HALLUCINATION GUARDRAILS
+    if (
+      !recipient_account_number ||
+      recipient_account_number === "null" ||
+      recipient_account_number === "undefined" ||
+      !recipient_bank_code ||
+      recipient_bank_code === "null" ||
+      recipient_bank_code === "undefined"
+    ) {
+      return {
+        success: true,
+        data: {
+          response:
+            "I need a bit more detail. What is the recipient's account number and bank?",
+          timestamp: new Date().toISOString(),
+          requiresConfirmation: false,
+        },
+      };
+    }
+
+    if (amount <= 0) {
+      return {
+        success: true,
+        data: {
+          response: "The transfer amount must be greater than zero.",
+        },
+      };
+    }
+
     // Create pending state
     const pendingTransaction = {
       type: "transfer",

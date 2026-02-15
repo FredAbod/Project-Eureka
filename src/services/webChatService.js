@@ -236,6 +236,7 @@ async function executeFunctionCall(
           phoneNumber,
           ip,
           userId,
+          args.from_account_id, // Pass explicit source account if provided
         );
 
       case "get_spending_insights":

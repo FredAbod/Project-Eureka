@@ -801,7 +801,10 @@ async function processMonoWebhook(event, data) {
         let phoneNumber = null;
 
         if (ref && ref.startsWith("user_")) {
-          userId = ref.replace("user_", "");
+          const parts = ref.split("_");
+          if (parts.length >= 2) {
+            userId = parts[1];
+          }
 
           // Find user to get phone number
           const user = await User.findById(userId);

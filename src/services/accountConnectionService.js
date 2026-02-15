@@ -37,7 +37,7 @@ class AccountConnectionService {
 
       // Use the backend API URL (port 4000) for the callback
       const baseUrl = process.env.BASE_URL_API || "http://localhost:4000";
-      const ref = `user_${user._id}`;
+      const ref = `user_${user._id}_${Date.now()}`;
       const redirectUrl = `${baseUrl}/api/mono/callback?reference=${ref}`;
 
       const result = await monoService.initiateAccountLinking(

@@ -114,9 +114,13 @@ const handleCallback = async (req, res) => {
     // Handle successful linking (status=linked)
     if (status === "linked") {
       // Extract User ID from reference
+      // Extract User ID from reference (format: user_<userId>_<timestamp>)
       let userId = null;
       if (reference && reference.startsWith("user_")) {
-        userId = reference.replace("user_", "");
+        const parts = reference.split("_");
+        if (parts.length >= 2) {
+          userId = parts[1]; // Get the ID part
+        }
       }
 
       if (!code) {

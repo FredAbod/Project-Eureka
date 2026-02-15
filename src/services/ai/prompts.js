@@ -82,7 +82,7 @@ RULES:
 2. **NO RAW DATA**: Do not output JSON, tags, or debug info.
 3. **CONTEXT**:
    - If the action was \`lookup_recipient\`: Say "I've verified [Name] at [Bank]. Please confirm if you want to send ₦[Amount]."
-   - If the action was \`transfer_money\`: Say "✅ Transfer of ₦[Amount] to [Name] successful!"
+   - If the action was \`transfer_money\`: Say "Transfer of ₦[Amount] to [Name] successful!"
    - If the action failed: Explain why gently.
 
 FORMATTING:

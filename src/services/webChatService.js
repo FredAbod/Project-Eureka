@@ -321,7 +321,11 @@ async function executeFunctionCall(
           args.account_number,
           args.bank_name,
         );
-        result = lookupResult;
+        result = {
+          ...lookupResult,
+          instruction:
+            "CRITICAL: TRANSFER IS NOT COMPLETE. User must now confirm amount. Ask: 'Verified [Name]. How much to send?'",
+        };
         logBankingOperation({
           userId,
           phoneNumber,

@@ -52,11 +52,23 @@ class AIParser {
   tryParseHallucination(content, rawResponse = {}) {
     if (!content) return null;
 
+    // DEBUG: Log content to see what we are parsing
+    if (
+      content.includes("function") ||
+      content.includes("python_tag") ||
+      content.includes("<|")
+    ) {
+      console.log("🔍 Parser analyzing content:", JSON.stringify(content));
+    }
+
     const pythonTagMatch = content.match(/<\|python_tag\|>([\w_]+)\((.*?)\)/s);
 
-    // Mathes: <function=name>{json}</function> OR <function=name({json})></function>
+    // Matches: <function=name>{json}</function>
+    // OR <function=name({json})></function>
+    // OR <function=name>({json})</function>
+    // OR <function=name...>{json}...</function> (Permissive)
     const xmlJsonMatch = content.match(
-      /<function=([\w_]+)(?:>|\()?({.*?})(?:\))?<\/function>/s,
+      /<function=([\w_]+)[^>]*?>?.*?({.*?}).*?<\/function>/s,
     );
 
     const tagMatch = pythonTagMatch || xmlJsonMatch;
@@ -93,7 +105,26 @@ class AIParser {
 
     // Positional or Named Argument Handling (Python tag)
     if (pythonTagMatch) {
-      // Check for named arguments pattern (key=value)
+      // 1. Handle Empty Args (e.g. get_total_balance())
+      if (!argsRaw || !argsRaw.trim()) {
+        if (
+          [
+            "get_total_balance",
+            "check_account_status",
+            "get_transactions",
+          ].includes(functionName)
+        ) {
+          return {
+            type: "function_call",
+            function: functionName,
+            arguments: {},
+            rawResponse,
+            hallucinated: true,
+          };
+        }
+      }
+
+      // 2. Check for named arguments pattern (key=value)
       if (argsRaw.includes("=")) {
         const namedArgs = {};
         argsRaw.split(",").forEach((pair) => {
@@ -104,7 +135,11 @@ class AIParser {
         });
 
         // Smart Recovery for known functions
-        if (["transfer_money", "lookup_recipient"].includes(functionName)) {
+        if (
+          ["transfer_money", "lookup_recipient", "learn_rule"].includes(
+            functionName,
+          )
+        ) {
           console.log(`✅ Recovered named-arg tool call: ${functionName}`);
           return {
             type: "function_call",
@@ -126,6 +161,22 @@ class AIParser {
           arguments: {
             account_number: argsList[0],
             bank_name: argsList[1],
+          },
+          rawResponse,
+          hallucinated: true,
+        };
+      }
+
+      // Learn Rule Positional Fallback
+      if (functionName === "learn_rule" && argsList.length >= 2) {
+        // Assuming key, value, category(opt)
+        return {
+          type: "function_call",
+          function: functionName,
+          arguments: {
+            key: argsList[0],
+            value: argsList[1],
+            category: argsList[2] || "fact",
           },
           rawResponse,
           hallucinated: true,

@@ -61,6 +61,16 @@ Your role now is to SUMMARIZE the result of that function in a natural, friendly
 CRITICAL:
 - DO NOT CALL ANY MORE TOOLS.
 - DO NOT OUTPUT RAW JSON OR TAGS.
-- Just describe the result found in the 'function' message.`;
+- Just describe the result found in the 'function' message.
+
+IMPORTANT FORMATTING RULES:
+1. CURRENCY: The system returns balances/amounts in KOBO (e.g., 10000 = ₦100).
+   - You MUST DIVIDE ALL AMOUNTS BY 100 before displaying them.
+   - Example: If function returns 50000, you say "₦500".
+
+2. TRANSFER FLOW:
+   - If the function was 'lookup_recipient', the transfer is NOT complete yet.
+   - Say: "I've verified the account [Name]. Please reply 'yes' or 'confirm' to send ₦[Amount]."
+   - DO NOT say "Transfer successful" unless the function was 'transfer_money'.`;
 
 module.exports = { SYSTEM_PROMPT, SUMMARY_PROMPT };

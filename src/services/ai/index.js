@@ -3,7 +3,7 @@ const aiParser = require("./parser");
 const { getBankingTools } = require("./tools/banking");
 const memoryTools = require("./tools/memory");
 const memoryService = require("./memoryService");
-const { SYSTEM_PROMPT } = require("./prompts");
+const { SYSTEM_PROMPT, SUMMARY_PROMPT } = require("./prompts");
 
 /**
  * Modular AI Service
@@ -87,7 +87,7 @@ class AIService {
   ) {
     try {
       const messages = [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: SUMMARY_PROMPT },
         ...conversationHistory,
         // Inject function result as a specialized message
         {

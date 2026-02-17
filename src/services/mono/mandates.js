@@ -7,25 +7,50 @@ const monoClient = require("./client");
 class MonoMandatesService {
   /**
    * Initiate Mandate (Step 1: Get Widget Link)
+   * POST /v2/payments/initiate
    * @param {Object} options
+   * @param {number} options.amount - Total amount for the mandate period
+   * @param {string} options.customerId - Mono customer ID
+   * @param {string} options.description - Mandate description
+   * @param {string} options.reference - Unique reference
+   * @param {string} options.redirectUrl - Redirect URL after mandate setup
+   * @param {string} options.mandateType - "emandate" | "signed" | "gsm"
+   * @param {string} options.debitType - "variable" | "fixed"
    */
   async initiateMandate(options) {
     try {
-      const { amount, description, email, phone, reference } = options;
+      const {
+        amount,
+        customerId,
+        description,
+        reference,
+        redirectUrl,
+        mandateType = "emandate",
+        debitType = "variable",
+      } = options;
+
+      if (!customerId) {
+        throw new Error("Mono customer ID is required to initiate a mandate");
+      }
 
       const payload = {
-        type: "recurring-debit",
-        mandate_type: "emandate", // Required for recurring setup
-        debit_type: "variable", // Required for variable recurring
         amount: amount || 0,
+        type: "recurring-debit",
+        method: "mandate",
+        mandate_type: mandateType,
+        debit_type: debitType,
         description: description || "Eureka AI Mandate Setup",
-        currency: "NGN",
-        start_date: new Date().toISOString().split("T")[0], // Today
+        reference: reference || `ref_${Date.now()}`,
+        redirect_url:
+          redirectUrl ||
+          process.env.MONO_REDIRECT_URL ||
+          "http://localhost:3000/chat",
+        customer: { id: customerId },
+        start_date: new Date().toISOString().split("T")[0],
         end_date: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000)
           .toISOString()
-          .split("T")[0], // 10 years
-        reference: reference || `ref_${Date.now()}`, // Fallback
-        customer: { email, phone },
+          .split("T")[0],
+        meta: {},
       };
 
       const data = await monoClient.request("/payments/initiate", {
@@ -33,38 +58,77 @@ class MonoMandatesService {
         body: JSON.stringify(payload),
       });
 
+      console.log("✅ Mandate initiated, reference:", payload.reference);
+
       return {
         success: true,
-        payment_link: data.payment_link || data.data?.link,
-        reference: data.reference || data.data?.reference,
+        payment_link: data.payment_link || data.data?.payment_link,
+        reference: data.reference || data.data?.reference || payload.reference,
       };
     } catch (error) {
+      console.error("❌ Mandate initiation failed:", error.message);
       return { success: false, error: error.message };
     }
   }
 
   /**
    * Create Mandate (V3)
+   * POST /v3/payments/mandates
    * @param {Object} options
+   * @param {string} options.customerId - Mono customer ID (required)
+   * @param {string} options.accountNumber - Bank account number
+   * @param {string} options.bankCode - Bank NIP code
+   * @param {string} options.reference - Unique reference
+   * @param {string} options.description - Mandate description
+   * @param {number} options.amount - Mandate amount
+   * @param {string} options.debitType - "variable" | "fixed"
+   * @param {string} options.mandateType - Mandate type
+   * @param {string} options.feeBearer - "customer" | "business"
    */
   async createMandate(options) {
     try {
-      const { accountId, customerId, reference, description } = options;
+      const {
+        customerId,
+        accountNumber,
+        bankCode,
+        reference,
+        description,
+        amount = 0,
+        debitType = "variable",
+        mandateType = "emandate",
+        feeBearer = "business",
+      } = options;
+
+      if (!customerId) {
+        throw new Error("Mono customer ID is required to create a mandate");
+      }
 
       const payload = {
-        debit_type: "variable",
-        account: accountId,
-        reference,
+        debit_type: debitType,
+        customer: customerId,
+        mandate_type: mandateType,
+        amount,
+        reference: reference || `mandate_${Date.now()}`,
         description: description || "Eureka AI Transfer Mandate",
+        fee_bearer: feeBearer,
+        start_date: new Date().toISOString().split("T")[0],
+        end_date: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split("T")[0],
+        meta: {},
       };
 
-      if (customerId) payload.customer = customerId;
+      if (accountNumber) payload.account_number = accountNumber;
+      if (bankCode) payload.bank_code = bankCode;
 
-      const data = await monoClient.request("/payments/mandates", {
-        method: "POST",
-        headers: monoClient.getV3Headers(), // Use V3 Headers
-        body: JSON.stringify(payload),
-      });
+      const data = await monoClient.request(
+        "https://api.withmono.com/v3/payments/mandates",
+        {
+          method: "POST",
+          headers: monoClient.getV3Headers(),
+          body: JSON.stringify(payload),
+        },
+      );
 
       console.log("✅ Mandate created:", data.data?.id);
 
@@ -76,6 +140,7 @@ class MonoMandatesService {
         data: data.data,
       };
     } catch (error) {
+      console.error("❌ Create mandate failed:", error.message);
       return { success: false, error: error.message };
     }
   }

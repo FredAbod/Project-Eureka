@@ -298,11 +298,23 @@ class TransactionFlowService {
       `⚠️ No active mandate for account ${sourceAccount._id}. Initiating...`,
     );
 
+    if (!sourceAccount.monoCustomerId) {
+      console.error(
+        "❌ No Mono customer ID on account. Cannot initiate mandate.",
+      );
+      return {
+        success: true,
+        data: {
+          response:
+            "Unable to set up authorization — your account is missing a customer ID. Please re-link your bank account first.",
+        },
+      };
+    }
+
     const mandateResult = await monoService.initiateMandate({
       amount: 0,
+      customerId: sourceAccount.monoCustomerId,
       description: "Eureka Transfer Authorization",
-      email: user.email,
-      phone: user.phoneNumber,
       reference: `auth_${Date.now()}_${user._id.toString().slice(-4)}`,
     });
 
@@ -329,10 +341,11 @@ class TransactionFlowService {
         },
       };
     } else {
+      console.error("❌ Mandate initiation failed:", mandateResult.error);
       return {
         success: true,
         data: {
-          response: "Failed to initiate authorization. Please try again later.",
+          response: `Failed to initiate authorization: ${mandateResult.error || "Unknown error"}. Please try again later.`,
         },
       };
     }

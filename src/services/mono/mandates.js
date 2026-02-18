@@ -70,11 +70,28 @@ class MonoMandatesService {
         body: JSON.stringify(payload),
       });
 
-      console.log("✅ Mandate initiated, reference:", payload.reference);
+      // Mono may return link in different shapes (v2 payments/initiate)
+      const paymentLink =
+        data.payment_link ||
+        data.link ||
+        data.data?.payment_link ||
+        data.data?.link ||
+        data.data?.payment_page_url ||
+        (data.data && typeof data.data === "object" && data.data.link);
+
+      if (!paymentLink) {
+        console.warn(
+          "⚠️ Mandate response missing payment_link. Keys:",
+          Object.keys(data),
+          data.data ? Object.keys(data.data) : [],
+        );
+      } else {
+        console.log("✅ Mandate initiated, reference:", payload.reference);
+      }
 
       return {
         success: true,
-        payment_link: data.payment_link || data.data?.payment_link,
+        payment_link: paymentLink,
         reference: data.reference || data.data?.reference || payload.reference,
       };
     } catch (error) {

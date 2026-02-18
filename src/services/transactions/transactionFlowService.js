@@ -358,15 +358,19 @@ class TransactionFlowService {
     }
 
     if (mandateResult.success) {
+      const mandateUrl = mandateResult.payment_link || mandateResult.paymentLink;
       sourceAccount.mandateReference = mandateResult.reference;
       sourceAccount.mandateStatus = "pending";
-      sourceAccount.mandateUrl = mandateResult.payment_link;
+      sourceAccount.mandateUrl = mandateUrl;
       await sourceAccount.save();
 
+      const linkText = mandateUrl
+        ? `👉 Please click here: ${mandateUrl}\n\n`
+        : "👉 You will receive an authorization link shortly. Check your email or the app.\n\n";
       const authResponse =
         `🚨 *Authorization Required*\n\n` +
         `To securely process this transfer, you need to authorize Eureka with your bank once.\n\n` +
-        `👉 Please click here: ${mandateResult.payment_link}\n\n` +
+        linkText +
         `After authorizing, please request the transfer again.`;
 
       await conversationService.addAssistantMessage(phoneNumber, authResponse);

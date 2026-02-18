@@ -888,6 +888,31 @@ async function processMonoWebhook(event, data) {
                 `✅ Bank account saved to database: ${accountResult.account.institution.name}`,
               );
 
+              // Update customer record with address for mandate support
+              // (address wasn't sent during account linking because /accounts/initiate doesn't accept it)
+              if (bankAccount.monoCustomerId && user) {
+                monoService
+                  .updateCustomer(bankAccount.monoCustomerId, {
+                    address: "Lagos, Nigeria", // TODO: Get from user profile or bank account identity
+                  })
+                  .then((updateResult) => {
+                    if (updateResult.success) {
+                      console.log(
+                        `✅ Customer updated with address for mandate support`,
+                      );
+                    } else {
+                      console.warn(
+                        `⚠️ Failed to update customer address: ${updateResult.error}`,
+                      );
+                    }
+                  })
+                  .catch((err) =>
+                    console.warn(
+                      `⚠️ Error updating customer address: ${err.message}`,
+                    ),
+                  );
+              }
+
               // Add bank account to user's linkedAccounts array
               await User.findByIdAndUpdate(userId, {
                 $addToSet: { linkedAccounts: bankAccount._id },

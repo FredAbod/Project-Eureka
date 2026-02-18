@@ -45,15 +45,26 @@ class AccountConnectionService {
           name: user.name,
           email: user.email,
           phone: user.phoneNumber,
-          // Mono requires address for mandates - using placeholder for now
-          // TODO: Add address field to User model or fetch from bank account
-          address: "Lagos, Nigeria",
+          // Note: address not sent here - /accounts/initiate doesn't accept it
+          // We'll update customer after account linking succeeds
         },
         redirectUrl,
         ref, // Pass user_<id> format for webhooks
       );
 
       if (result.success) {
+        // Update customer with address after linking succeeds (for mandate support)
+        // This happens asynchronously - don't block the response
+        if (result.customerId) {
+          monoService
+            .updateCustomer(result.customerId, {
+              address: "Lagos, Nigeria", // TODO: Get from user profile or bank account
+            })
+            .catch((err) =>
+              console.warn("⚠️ Failed to update customer address:", err.message),
+            );
+        }
+
         return {
           success: true,
           message: `Please use this link to securely connect your bank account: ${result.monoUrl}`,

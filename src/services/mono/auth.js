@@ -18,13 +18,12 @@ class MonoAuthService {
         email: customer.email,
       };
 
-      // Mono requires phone and address for mandate creation
+      // Phone is allowed in account linking
       if (customer.phone) {
         customerPayload.phone = customer.phone;
       }
-      if (customer.address) {
-        customerPayload.address = customer.address;
-      }
+      // Note: address is NOT allowed in /accounts/initiate
+      // We'll update the customer record after linking for mandate support
 
       const payload = {
         customer: customerPayload,

@@ -7,14 +7,27 @@ const monoClient = require("./client");
 class MonoAuthService {
   /**
    * Initiate account linking
-   * @param {Object} customer - { name, email }
+   * @param {Object} customer - { name, email, phone, address }
    * @param {string} redirectUrl
    * @param {string} ref - Optional reference
    */
   async initiateAccountLinking(customer, redirectUrl, ref = null) {
     try {
+      const customerPayload = {
+        name: customer.name,
+        email: customer.email,
+      };
+
+      // Mono requires phone and address for mandate creation
+      if (customer.phone) {
+        customerPayload.phone = customer.phone;
+      }
+      if (customer.address) {
+        customerPayload.address = customer.address;
+      }
+
       const payload = {
-        customer: { name: customer.name, email: customer.email },
+        customer: customerPayload,
         scope: "auth",
         redirect_url: redirectUrl,
       };

@@ -41,7 +41,14 @@ class AccountConnectionService {
       const redirectUrl = `${baseUrl}/api/mono/callback?reference=${ref}`;
 
       const result = await monoService.initiateAccountLinking(
-        { name: user.name, email: user.email },
+        {
+          name: user.name,
+          email: user.email,
+          phone: user.phoneNumber,
+          // Mono requires address for mandates - using placeholder for now
+          // TODO: Add address field to User model or fetch from bank account
+          address: "Lagos, Nigeria",
+        },
         redirectUrl,
         ref, // Pass user_<id> format for webhooks
       );

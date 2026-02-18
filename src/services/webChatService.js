@@ -428,9 +428,12 @@ async function getChatHistory(params) {
     const history =
       await conversationService.getConversationHistory(phoneNumber);
 
-    // Filter out function and system messages - only show user/assistant messages
+    // Filter to only user/assistant messages with actual text content.
+    // Excludes tool call messages (assistant messages with content: null)
+    // and function/tool result messages.
     const visibleMessages = history.filter(
-      (msg) => msg.role === "user" || msg.role === "assistant",
+      (msg) =>
+        (msg.role === "user" || msg.role === "assistant") && msg.content,
     );
 
     return {

@@ -244,6 +244,18 @@ class TransactionFlowService {
       amountKobo,
     );
 
+    const mandateNotReady = (err) =>
+      err && /not ready for use|try again in 5|wait.*minutes/i.test(String(err));
+
+    if (!balanceCheck.success && balanceCheck.error) {
+      const errMsg = balanceCheck.error;
+      const msg = mandateNotReady(errMsg)
+        ? "Your authorization just went through. The bank needs a few minutes before we can process the transfer. Please try again in about 5 minutes."
+        : `Could not verify balance: ${errMsg}`;
+      await conversationService.addAssistantMessage(phoneNumber, `⏳ ${msg}`);
+      return { success: true, data: { response: `⏳ ${msg}` } };
+    }
+
     if (balanceCheck.hasSufficientBalance === false) {
       const msg = `❌ Insufficient funds. Your balance is too low.`;
       await conversationService.addAssistantMessage(phoneNumber, msg);
@@ -264,9 +276,13 @@ class TransactionFlowService {
     );
 
     if (!debitResult.success) {
-      const msg = `❌ Transfer failed: ${debitResult.error || "Unknown error"}`;
-      await conversationService.addAssistantMessage(phoneNumber, msg);
-      return { success: true, data: { response: msg } };
+      const errMsg = debitResult.error || "Unknown error";
+      const msg = mandateNotReady(errMsg)
+        ? "Your authorization just went through. The bank needs a few minutes before we can process the transfer. Please try again in about 5 minutes."
+        : `Transfer failed: ${errMsg}`;
+      const displayMsg = mandateNotReady(errMsg) ? `⏳ ${msg}` : `❌ ${msg}`;
+      await conversationService.addAssistantMessage(phoneNumber, displayMsg);
+      return { success: true, data: { response: displayMsg } };
     }
 
     // 6. Success

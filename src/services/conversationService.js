@@ -5,7 +5,7 @@
 const Session = require("../models/Session");
 const sessionRepo = require("../repositories/sessionRepository");
 
-const MAX_HISTORY = 20;
+const MAX_HISTORY = 32;
 
 class ConversationService {
   /**
@@ -133,7 +133,14 @@ class ConversationService {
    * Format history for Groq API
    */
   formatForGroq(history) {
-    return history.map((msg) => {
+    return history
+      .filter((msg) => {
+        if (msg.role === "assistant" && typeof msg.content === "string" && msg.content.startsWith("[tool_call:") && !msg.tool_calls) return false;
+        if (msg.role === "assistant" && !msg.content && !msg.tool_calls) return false;
+        if (msg.role === "user" && (msg.content == null || msg.content === "")) return false;
+        return true;
+      })
+      .map((msg) => {
       // Assistant message with tool_calls (send content: null to Groq API)
       if (msg.role === "assistant" && msg.tool_calls) {
         return {

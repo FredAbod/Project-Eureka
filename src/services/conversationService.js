@@ -63,7 +63,7 @@ class ConversationService {
     try {
       await this.addMessageToSession(phoneNumber, {
         role: "assistant",
-        content: null,
+        content: `[tool_call:${functionName}]`,
         tool_calls: [
           {
             id: toolCallId,
@@ -134,12 +134,14 @@ class ConversationService {
    */
   formatForGroq(history) {
     return history.map((msg) => {
-      // Assistant message with tool_calls
+      // Assistant message with tool_calls (send content: null to Groq API)
       if (msg.role === "assistant" && msg.tool_calls) {
         return {
           role: "assistant",
           content: null,
-          tool_calls: msg.tool_calls,
+          tool_calls: Array.isArray(msg.tool_calls)
+            ? msg.tool_calls
+            : [msg.tool_calls],
         };
       }
 

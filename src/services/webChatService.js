@@ -126,16 +126,16 @@ async function executeFunctionCall(
     userId,
   });
 
-  // Save the assistant's tool call decision to history BEFORE executing.
-  // Without this, the AI has no memory of calling the tool and will loop.
-  await conversationService.addAssistantToolCall(
-    phoneNumber,
-    toolCallId,
-    functionName,
-    args,
-  );
-
   try {
+    // Save the assistant's tool call decision to history BEFORE executing.
+    // Without this, the AI has no memory of calling the tool and will loop.
+    await conversationService.addAssistantToolCall(
+      phoneNumber,
+      toolCallId,
+      functionName,
+      args,
+    );
+
     let result;
 
     switch (functionName) {
@@ -428,12 +428,13 @@ async function getChatHistory(params) {
     const history =
       await conversationService.getConversationHistory(phoneNumber);
 
-    // Filter to only user/assistant messages with actual text content.
-    // Excludes tool call messages (assistant messages with content: null)
-    // and function/tool result messages.
+    // Filter to only user/assistant messages with actual displayable text.
+    // Excludes tool call placeholders, function/tool results, and empty messages.
     const visibleMessages = history.filter(
       (msg) =>
-        (msg.role === "user" || msg.role === "assistant") && msg.content,
+        (msg.role === "user" || msg.role === "assistant") &&
+        msg.content &&
+        !msg.content.startsWith("[tool_call:"),
     );
 
     return {

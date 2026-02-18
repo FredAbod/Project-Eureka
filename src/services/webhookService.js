@@ -164,15 +164,15 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
 
   console.info('Executing function call', { function: functionName, args });
 
-  // Save the assistant's tool call decision to history BEFORE executing.
-  await conversationService.addAssistantToolCall(
-    phoneNumber,
-    toolCallId,
-    functionName,
-    args,
-  );
-
   try {
+    // Save the assistant's tool call decision to history BEFORE executing.
+    await conversationService.addAssistantToolCall(
+      phoneNumber,
+      toolCallId,
+      functionName,
+      args,
+    );
+
     let result;
 
     switch (functionName) {

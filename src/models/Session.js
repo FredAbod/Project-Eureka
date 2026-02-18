@@ -27,8 +27,7 @@ const sessionSchema = new mongoose.Schema({
       },
       content: {
         type: String,
-        required: false,
-        default: null,
+        default: "",
       },
       name: String,
       tool_calls: {

@@ -55,6 +55,7 @@ class MonoClient {
       const data = await response.json();
 
       if (!response.ok) {
+        console.error(`❌ Mono API Error Response [${endpoint}]:`, JSON.stringify(data, null, 2));
         throw new Error(
           data.message || `Mono API Error: ${response.statusText}`,
         );

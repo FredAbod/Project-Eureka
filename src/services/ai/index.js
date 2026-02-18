@@ -86,21 +86,26 @@ class AIService {
     conversationHistory = [],
   ) {
     try {
+      // Only keep the last 4 messages to provide minimal context
+      // and prevent old conversation topics from contaminating the summary
+      const recentHistory = conversationHistory.slice(-4);
+
       const messages = [
-        { role: "system", content: SUMMARY_PROMPT },
-        ...conversationHistory,
-        // Inject function result as a specialized message
         {
-          role: "function",
-          name: functionName,
-          content: JSON.stringify(functionResult),
+          role: "system",
+          content:
+            SUMMARY_PROMPT +
+            `\n\nCURRENT TASK: Summarize the result of the \`${functionName}\` function ONLY. Do not reference any other actions or topics from conversation history.`,
+        },
+        ...recentHistory,
+        {
+          role: "user",
+          content: `The \`${functionName}\` function just executed. Here is the result:\n${JSON.stringify(functionResult)}\n\nSummarize this result for the user. Do NOT mention any previous transfers, lookups, or other actions.`,
         },
       ];
 
-      // Call without tools for the final response to avoid loops
       const choice = await aiClient.chat(messages, [], { max_tokens: 400 });
 
-      // Sanitizing content to prevent tag leaks in summary
       return aiParser.sanitizeContent(choice.message.content);
     } catch (error) {
       console.error("Error generating function response:", error.message);

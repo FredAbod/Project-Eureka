@@ -33,8 +33,12 @@ class MonoMandatesService {
         throw new Error("Mono customer ID is required to initiate a mandate");
       }
 
+      // For variable mandates, amount = total collection cap over the period.
+      // Mono rejects amount: 0; use a reasonable default (₦500,000 = 50000000 kobo).
+      const mandateAmount = amount || 50000000;
+
       const payload = {
-        amount: amount || 0,
+        amount: mandateAmount,
         type: "recurring-debit",
         method: "mandate",
         mandate_type: mandateType,
@@ -47,11 +51,13 @@ class MonoMandatesService {
           "http://localhost:3000/chat",
         customer: { id: customerId },
         start_date: new Date().toISOString().split("T")[0],
-        end_date: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000)
+        end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
           .toISOString()
           .split("T")[0],
         meta: {},
       };
+
+      console.log("📤 Mandate initiation payload:", JSON.stringify(payload, null, 2));
 
       const data = await monoClient.request("/payments/initiate", {
         method: "POST",

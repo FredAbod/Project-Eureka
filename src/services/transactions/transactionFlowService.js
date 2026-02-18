@@ -312,7 +312,6 @@ class TransactionFlowService {
     }
 
     const mandateResult = await monoService.initiateMandate({
-      amount: 0,
       customerId: sourceAccount.monoCustomerId,
       description: "Eureka Transfer Authorization",
       reference: `auth_${Date.now()}_${user._id.toString().slice(-4)}`,

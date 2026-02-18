@@ -65,19 +65,28 @@ class AIParser {
     const pythonTagMatch = content.match(/<\|python_tag\|>([\w_]+)\((.*?)\)/s);
 
     // Matches: <function=name>{json}</function>
-    // OR <function=name({json})></function>
-    // OR <function=name>({json})</function>
-    // OR <function=name...>{json}...</function> (Permissive)
     const xmlJsonMatch = content.match(
       /<function=([\w_]+)[^>]*?>?.*?({.*?}).*?<\/function>/s,
     );
 
-    const tagMatch = pythonTagMatch || xmlJsonMatch;
+    // Matches malformed: <function)name>{}</function> or <function(name)></function>
+    const malformedParenMatch = content.match(
+      /<function\)([\w_]+)\s*>\s*(\{\s*\})?\s*<\/function>/i,
+    );
+    const malformedParenNameMatch = content.match(
+      /<function\(([\w_]+)\)\s*>\s*<\/function>/i,
+    );
+
+    const tagMatch =
+      pythonTagMatch ||
+      xmlJsonMatch ||
+      malformedParenMatch ||
+      malformedParenNameMatch;
 
     if (!tagMatch) return null;
 
     const functionName = tagMatch[1];
-    const argsRaw = tagMatch[2];
+    const argsRaw = tagMatch[2] || "{}";
 
     console.warn("⚠️ Detected raw tool call tag:", { functionName, argsRaw });
 
@@ -87,11 +96,16 @@ class AIParser {
 
     let parsedArgs = {};
 
-    // JSON Handling
-    if (xmlJsonMatch) {
-      try {
-        parsedArgs = JSON.parse(argsRaw);
-        console.log("✅ Recovered JSON tool call from raw tag");
+    // JSON Handling (works for xmlJsonMatch and malformedParenMatch with {} or { ... })
+    try {
+      parsedArgs = argsRaw.trim() ? JSON.parse(argsRaw) : {};
+    } catch (e) {
+      // ignore
+    }
+
+    if (xmlJsonMatch || malformedParenMatch || malformedParenNameMatch) {
+      if (typeof parsedArgs === "object" && parsedArgs !== null) {
+        console.log("✅ Recovered tool call from raw tag:", functionName);
         return {
           type: "function_call",
           function: functionName,
@@ -100,8 +114,6 @@ class AIParser {
           rawResponse: rawResponse,
           hallucinated: true,
         };
-      } catch (e) {
-        console.warn("Failed to parse JSON in raw tag:", e.message);
       }
     }
 
@@ -184,13 +196,15 @@ class AIParser {
   sanitizeContent(content) {
     if (!content) return "";
     let clean = content
-      .replace(/<\|python_tag\|>[\s\S]*?(\)|$)/gi, "") // Global, Case-insensitive, Multiline
+      .replace(/<\|python_tag\|>[\s\S]*?(\)|$)/gi, "")
       .replace(/<function=[\s\S]*?>[\s\S]*?<\/function>/gi, "")
       .replace(/<function=[\s\S]*?>/gi, "")
+      .replace(/<function\)[\s\S]*?<\/function>/gi, "") // malformed: <function)name>{}</function>
+      .replace(/<function\)[^<]*/gi, "")
       .trim();
 
-    if (!clean && content.includes("python_tag")) {
-      return "I encountered a technical glitch. Could you rephrase your request?";
+    if (!clean && (content.includes("python_tag") || content.includes("function)"))) {
+      return "I'll help you with that. One moment.";
     }
     return clean;
   }

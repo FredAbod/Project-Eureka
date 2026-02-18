@@ -70,14 +70,14 @@ class MonoMandatesService {
         body: JSON.stringify(payload),
       });
 
-      // Mono may return link in different shapes (v2 payments/initiate)
+      // Mono v2 payments/initiate returns the mandate link as data.data.mono_url
       const paymentLink =
+        data.data?.mono_url ||
         data.payment_link ||
         data.link ||
         data.data?.payment_link ||
         data.data?.link ||
-        data.data?.payment_page_url ||
-        (data.data && typeof data.data === "object" && data.data.link);
+        data.data?.payment_page_url;
 
       if (!paymentLink) {
         console.warn(

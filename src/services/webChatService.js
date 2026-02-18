@@ -46,6 +46,13 @@ async function processMessage(params) {
       await conversationService.getConversationHistory(phoneNumber);
     const conversationHistory = conversationService.formatForGroq(rawHistory);
 
+    // Fetch user info for personalized responses
+    const user = await User.findById(userId).select("name").lean();
+    const firstName = user?.name ? user.name.split(" ")[0] : null;
+    const userContext = firstName
+      ? { firstName, name: user.name }
+      : null;
+
     // Add user message to history
     await conversationService.addUserMessage(phoneNumber, message);
 
@@ -54,6 +61,7 @@ async function processMessage(params) {
       message,
       conversationHistory,
       userId,
+      userContext,
     );
 
     // Handle based on response type

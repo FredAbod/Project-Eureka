@@ -21,9 +21,14 @@ class AIService {
    * @param {string} userId - User ID for memory retrieval
    * @returns {Promise<Object>} - Structured response { type, content, ... }
    */
-  async processMessage(userMessage, conversationHistory = [], userId = null) {
-    // 0. Retrieve Memory Context
+  async processMessage(userMessage, conversationHistory = [], userId = null, userContext = null) {
+    // 0. Build system prompt with user context
     let systemPrompt = SYSTEM_PROMPT;
+
+    if (userContext && userContext.firstName) {
+      systemPrompt += `\n\n[USER CONTEXT]\nUser's first name: ${userContext.firstName}\nFull name: ${userContext.name || userContext.firstName}\nAlways address the user as "${userContext.firstName}".`;
+    }
+
     if (userId) {
       const rules = await memoryService.getRelevantRules(userId, userMessage);
       if (rules.length > 0) {

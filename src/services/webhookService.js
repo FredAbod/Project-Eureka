@@ -106,6 +106,13 @@ async function handleEvent(event) {
     const rawHistory = await conversationService.getConversationHistory(from);
     const conversationHistory = conversationService.formatForGroq(rawHistory);
 
+    // Fetch user info for personalized responses
+    let userContext = null;
+    if (user && user.name) {
+      const firstName = user.name.split(" ")[0];
+      userContext = { firstName, name: user.name };
+    }
+
     console.info('Processing with AI', { 
       from: session.from, 
       textLength: text.length,
@@ -116,7 +123,7 @@ async function handleEvent(event) {
     await conversationService.addUserMessage(from, text);
 
     // Process message with AI
-    const aiResponse = await aiService.processMessage(text, conversationHistory);
+    const aiResponse = await aiService.processMessage(text, conversationHistory, session.userId, userContext);
 
     // Handle based on AI response type
     if (aiResponse.type === 'function_call') {

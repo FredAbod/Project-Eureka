@@ -799,6 +799,7 @@ async function processMonoWebhook(event, data) {
         // Extract user ID from ref (format: user_<userId>)
         let userId = null;
         let phoneNumber = null;
+        let user = null;
 
         if (ref && ref.startsWith("user_")) {
           const parts = ref.split("_");
@@ -807,7 +808,7 @@ async function processMonoWebhook(event, data) {
           }
 
           // Find user to get phone number
-          const user = await User.findById(userId);
+          user = await User.findById(userId);
           if (user) {
             phoneNumber = user.phoneNumber;
           }

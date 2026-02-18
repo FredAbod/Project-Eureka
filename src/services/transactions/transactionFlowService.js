@@ -220,7 +220,16 @@ class TransactionFlowService {
 
     const verifiedRecipientName = recipientCheck.accountName;
 
-    // 3. Authorization (Mandate) Check
+    // 3. Authorization (Mandate) Check — sync from Mono first for users who already approved
+    if (
+      !sourceAccount.mandateStatus ||
+      sourceAccount.mandateStatus !== "active"
+    ) {
+      const synced = await this.syncMandateStatus(sourceAccount);
+      if (synced) {
+        sourceAccount = await BankAccount.findById(sourceAccount._id);
+      }
+    }
     if (
       !sourceAccount.mandateStatus ||
       sourceAccount.mandateStatus !== "active"
@@ -287,6 +296,53 @@ class TransactionFlowService {
         requiresConfirmation: false,
       },
     };
+  }
+
+  /**
+   * Sync mandate status from Mono (for users who already approved before webhook was fixed).
+   * @param {Object} sourceAccount - BankAccount document
+   * @returns {Promise<boolean>} - true if account was updated with an active mandate
+   */
+  async syncMandateStatus(sourceAccount) {
+    if (!sourceAccount.monoCustomerId) return false;
+    const result = await monoService.listMandatesForCustomer(
+      sourceAccount.monoCustomerId,
+    );
+    if (!result.success || !result.mandates?.length) return false;
+
+    const approved = (m) =>
+      m.status === "approved" || m.approved === true || m.ready_to_debit === true;
+    const match = result.mandates.find((m) => {
+      if (!approved(m)) return false;
+      if (
+        sourceAccount.mandateReference &&
+        (m.reference === sourceAccount.mandateReference ||
+          m.reference === sourceAccount.mandateReference?.trim())
+      )
+        return true;
+      const accNum = m.account_number ?? m.accountNumber;
+      if (
+        sourceAccount.accountNumber &&
+        accNum &&
+        String(accNum).trim() === String(sourceAccount.accountNumber).trim()
+      )
+        return true;
+      return false;
+    });
+
+    if (!match) return false;
+
+    const mandateId = match.id ?? match.mandateId;
+    if (!mandateId) return false;
+
+    sourceAccount.mandateId = mandateId;
+    sourceAccount.mandateStatus = "active";
+    if (match.reference) sourceAccount.mandateReference = match.reference;
+    await sourceAccount.save();
+    console.log(
+      `✅ Synced mandate from Mono for account ${sourceAccount._id}, mandateId: ${mandateId}`,
+    );
+    return true;
   }
 
   /**

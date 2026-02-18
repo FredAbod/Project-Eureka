@@ -1123,31 +1123,47 @@ async function processMonoWebhook(event, data) {
       }
 
       case "mono.events.mandate.approved":
-      case "mono.events.mandate.created": {
+      case "mono.events.mandate.created":
+      case "events.mandates.approved":
+      case "events.mandates.created": {
         console.log(`📜 Mandate event received: ${event}`);
-        const mandateId = data.id; // Mandate ID (mmc_...)
+        const mandateId = data.id; // e.g. mmc_699631368b1bfec16fedae60
         const reference = data.reference;
-        const accountId = data.account; // Account ID
+        const customerId = data.customer;
+        const accountNumber = data.account_number;
+        const approved = data.approved === true || data.status === "approved";
 
-        // Find Account
+        // Find the BankAccount we initiated this mandate for
         let bankAccount = null;
         if (reference) {
           bankAccount = await BankAccount.findOne({
             mandateReference: reference,
+            isActive: true,
           });
         }
-        if (!bankAccount && accountId) {
-          bankAccount = await BankAccount.findOne({ monoAccountId: accountId });
+        if (!bankAccount && customerId && accountNumber) {
+          bankAccount = await BankAccount.findOne({
+            monoCustomerId: customerId,
+            accountNumber: accountNumber,
+            isActive: true,
+          });
+        }
+        if (!bankAccount && customerId) {
+          bankAccount = await BankAccount.findOne({
+            monoCustomerId: customerId,
+            isActive: true,
+          });
         }
 
         if (bankAccount) {
           bankAccount.mandateId = mandateId;
-          bankAccount.mandateStatus = "active"; // Or "approved" then "active" after 24h?
-          // Assuming active for now to unblock testing
+          bankAccount.mandateStatus = approved ? "active" : "pending";
           await bankAccount.save();
-          console.log(`✅ Mandate activating for account ${bankAccount._id}`);
+          console.log(
+            `✅ Mandate ${approved ? "activated" : "pending"} for account ${bankAccount._id}, mandateId: ${mandateId}`,
+          );
 
-          if (bankAccount.userId) {
+          if (approved && bankAccount.userId) {
             const user = await User.findById(bankAccount.userId);
             if (user && user.phoneNumber) {
               await whatsappService.sendMessage(
@@ -1157,7 +1173,9 @@ async function processMonoWebhook(event, data) {
             }
           }
         } else {
-          console.warn(`⚠️ Could not find account for mandate ${mandateId}`);
+          console.warn(
+            `⚠️ Could not find account for mandate ${mandateId}, reference: ${reference}, customer: ${customerId}`,
+          );
         }
         break;
       }

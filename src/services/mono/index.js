@@ -103,6 +103,9 @@ class MonoServiceFacade {
   getMandate(id) {
     return this.mandates.getMandate(id);
   }
+  listMandatesForCustomer(customerId) {
+    return this.mandates.listMandatesForCustomer(customerId);
+  }
 
   // --- Helpers ---
   getHeaders() {

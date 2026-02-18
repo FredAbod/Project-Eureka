@@ -308,6 +308,37 @@ class MonoMandatesService {
   }
 
   /**
+   * List mandates for a customer. Uses GET /v3/payments/mandates (all mandates for the business)
+   * and filters by customerId.
+   * @param {string} customerId - Mono customer ID
+   * @returns {{ success: boolean, mandates?: Array<{ id, reference, status, approved, account_number, customer }>, error?: string }}
+   */
+  async listMandatesForCustomer(customerId) {
+    try {
+      const data = await monoClient.request(
+        "https://api.withmono.com/v3/payments/mandates",
+        {
+          method: "GET",
+          headers: monoClient.getV3Headers(),
+        },
+      );
+      const list = data.data ?? data.mandates ?? data;
+      const all = Array.isArray(list) ? list : list?.data ?? [];
+      const mandates = customerId
+        ? all.filter(
+            (m) =>
+              (m.customer && String(m.customer) === String(customerId)) ||
+              (m.customer_id && String(m.customer_id) === String(customerId)),
+          )
+        : all;
+      return { success: true, mandates };
+    } catch (error) {
+      console.warn("⚠️ listMandatesForCustomer failed:", error.message);
+      return { success: false, mandates: [], error: error.message };
+    }
+  }
+
+  /**
    * Check mandate balance (alias/detailed version)
    * @param {string} mandateId
    * @param {number} amount

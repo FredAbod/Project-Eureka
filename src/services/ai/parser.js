@@ -21,6 +21,7 @@ class AIParser {
           type: "function_call",
           function: functionName,
           arguments: args,
+          toolCallId: toolCall.id,
           rawResponse: message,
         };
       } catch (e) {
@@ -95,6 +96,7 @@ class AIParser {
           type: "function_call",
           function: functionName,
           arguments: parsedArgs,
+          toolCallId: `recovered_${Date.now()}`,
           rawResponse: rawResponse,
           hallucinated: true,
         };
@@ -112,6 +114,7 @@ class AIParser {
           type: "function_call",
           function: functionName,
           arguments: {},
+          toolCallId: `recovered_${Date.now()}`,
           rawResponse,
           hallucinated: true,
         };
@@ -132,6 +135,7 @@ class AIParser {
           type: "function_call",
           function: functionName,
           arguments: namedArgs,
+          toolCallId: `recovered_${Date.now()}`,
           rawResponse,
           hallucinated: true,
         };
@@ -148,6 +152,7 @@ class AIParser {
             account_number: argsList[0],
             bank_name: argsList[1],
           },
+          toolCallId: `recovered_${Date.now()}`,
           rawResponse,
           hallucinated: true,
         };
@@ -155,7 +160,6 @@ class AIParser {
 
       // Learn Rule Positional Fallback
       if (functionName === "learn_rule" && argsList.length >= 2) {
-        // Assuming key, value, category(opt)
         return {
           type: "function_call",
           function: functionName,
@@ -164,6 +168,7 @@ class AIParser {
             value: argsList[1],
             category: argsList[2] || "fact",
           },
+          toolCallId: `recovered_${Date.now()}`,
           rawResponse,
           hallucinated: true,
         };

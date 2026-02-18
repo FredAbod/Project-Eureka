@@ -79,11 +79,13 @@ class AIService {
    * @param {string} functionName
    * @param {Object} functionResult
    * @param {Array} conversationHistory
+   * @param {string} toolCallId - The tool call ID for proper message format
    */
   async generateResponseFromFunction(
     functionName,
     functionResult,
     conversationHistory = [],
+    toolCallId = null,
   ) {
     try {
       // Only keep the last 4 messages to provide minimal context
@@ -98,11 +100,29 @@ class AIService {
             `\n\nCURRENT TASK: Summarize the result of the \`${functionName}\` function ONLY. Do not reference any other actions or topics from conversation history.`,
         },
         ...recentHistory,
-        {
-          role: "user",
-          content: `The \`${functionName}\` function just executed. Here is the result:\n${JSON.stringify(functionResult)}\n\nSummarize this result for the user. Do NOT mention any previous transfers, lookups, or other actions.`,
-        },
       ];
+
+      // Use proper tool call format so the model understands the flow
+      const callId = toolCallId || `summary_${Date.now()}`;
+      messages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: callId,
+            type: "function",
+            function: {
+              name: functionName,
+              arguments: "{}",
+            },
+          },
+        ],
+      });
+      messages.push({
+        role: "tool",
+        tool_call_id: callId,
+        content: JSON.stringify(functionResult),
+      });
 
       const choice = await aiClient.chat(messages, [], { max_tokens: 400 });
 

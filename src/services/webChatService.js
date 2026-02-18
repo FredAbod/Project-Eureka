@@ -118,12 +118,22 @@ async function executeFunctionCall(
 ) {
   const functionName = aiResponse.function;
   const args = aiResponse.arguments;
+  const toolCallId = aiResponse.toolCallId || `call_${Date.now()}`;
 
   console.info("Web chat executing function", {
     function: functionName,
     args,
     userId,
   });
+
+  // Save the assistant's tool call decision to history BEFORE executing.
+  // Without this, the AI has no memory of calling the tool and will loop.
+  await conversationService.addAssistantToolCall(
+    phoneNumber,
+    toolCallId,
+    functionName,
+    args,
+  );
 
   try {
     let result;
@@ -379,11 +389,13 @@ async function executeFunctionCall(
       phoneNumber,
       functionName,
       result,
+      toolCallId,
     );
     const responseText = await aiService.generateResponseFromFunction(
       functionName,
       result,
       conversationHistory,
+      toolCallId,
     );
     await conversationService.addAssistantMessage(phoneNumber, responseText);
 

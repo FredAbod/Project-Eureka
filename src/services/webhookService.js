@@ -160,8 +160,17 @@ async function handleEvent(event) {
 async function executeFunctionCall(aiResponse, session, conversationHistory, phoneNumber) {
   const functionName = aiResponse.function;
   const args = aiResponse.arguments;
+  const toolCallId = aiResponse.toolCallId || `call_${Date.now()}`;
 
   console.info('Executing function call', { function: functionName, args });
+
+  // Save the assistant's tool call decision to history BEFORE executing.
+  await conversationService.addAssistantToolCall(
+    phoneNumber,
+    toolCallId,
+    functionName,
+    args,
+  );
 
   try {
     let result;
@@ -195,8 +204,8 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
               }
 
               // Record function result for context and generate natural response
-              await conversationService.addFunctionResult(phoneNumber, 'check_account_status', result);
-              const resp = await aiService.generateResponseFromFunction('check_balance', { accounts }, conversationHistory);
+              await conversationService.addFunctionResult(phoneNumber, 'check_account_status', result, toolCallId);
+              const resp = await aiService.generateResponseFromFunction('check_balance', { accounts }, conversationHistory, toolCallId);
               await conversationService.addAssistantMessage(phoneNumber, resp);
               return { text: resp };
             }
@@ -208,8 +217,8 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
                 return { text: 'No recent transactions found.' };
               }
 
-              await conversationService.addFunctionResult(phoneNumber, 'check_account_status', result);
-              const resp = await aiService.generateResponseFromFunction('get_transactions', { transactions: txs.slice(0, 10) }, conversationHistory);
+              await conversationService.addFunctionResult(phoneNumber, 'check_account_status', result, toolCallId);
+              const resp = await aiService.generateResponseFromFunction('get_transactions', { transactions: txs.slice(0, 10) }, conversationHistory, toolCallId);
               await conversationService.addAssistantMessage(phoneNumber, resp);
               return { text: resp };
             }
@@ -296,7 +305,7 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
     }
 
     // Add function result to conversation
-    await conversationService.addFunctionResult(phoneNumber, functionName, result);
+    await conversationService.addFunctionResult(phoneNumber, functionName, result, toolCallId);
 
     console.info('Generating natural language response from function result', {
       function: functionName,
@@ -304,20 +313,11 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
       phoneNumber
     });
 
-    // Generate natural language response from function result
-    // Only include args in history if they exist and are not empty
-    const historyWithContext = [...conversationHistory];
-    if (args && Object.keys(args).length > 0) {
-      historyWithContext.push({ 
-        role: 'user', 
-        content: `Function arguments: ${JSON.stringify(args)}` 
-      });
-    }
-
     const responseText = await aiService.generateResponseFromFunction(
       functionName,
       result,
-      historyWithContext
+      conversationHistory,
+      toolCallId,
     );
 
     console.info('Generated response', {

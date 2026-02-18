@@ -55,16 +55,50 @@ class ConversationService {
   }
 
   /**
-   * Add a function result to history (for AI context)
+   * Save the assistant's tool call decision to history.
+   * This is critical: without it, the AI has no memory of calling the tool
+   * and will repeat tool calls in a loop.
    */
-  async addFunctionResult(phoneNumber, functionName, result) {
+  async addAssistantToolCall(phoneNumber, toolCallId, functionName, functionArgs) {
+    try {
+      await this.addMessageToSession(phoneNumber, {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          {
+            id: toolCallId,
+            type: "function",
+            function: {
+              name: functionName,
+              arguments: JSON.stringify(functionArgs || {}),
+            },
+          },
+        ],
+      });
+    } catch (error) {
+      console.error("[Conversation] Error adding tool call:", error);
+    }
+  }
+
+  /**
+   * Add a function/tool result to history (for AI context)
+   */
+  async addFunctionResult(phoneNumber, functionName, result, toolCallId) {
     try {
       console.log(`[Conversation] Function (${functionName}):`, result);
-      await this.addMessageToSession(phoneNumber, {
-        role: "function",
-        name: functionName,
-        content: JSON.stringify(result),
-      });
+      if (toolCallId) {
+        await this.addMessageToSession(phoneNumber, {
+          role: "tool",
+          tool_call_id: toolCallId,
+          content: JSON.stringify(result),
+        });
+      } else {
+        await this.addMessageToSession(phoneNumber, {
+          role: "function",
+          name: functionName,
+          content: JSON.stringify(result),
+        });
+      }
     } catch (error) {
       console.error("[Conversation] Error adding function result:", error);
     }
@@ -100,17 +134,38 @@ class ConversationService {
    */
   formatForGroq(history) {
     return history.map((msg) => {
-      const formatted = {
+      // Assistant message with tool_calls
+      if (msg.role === "assistant" && msg.tool_calls) {
+        return {
+          role: "assistant",
+          content: null,
+          tool_calls: msg.tool_calls,
+        };
+      }
+
+      // Tool result (new format)
+      if (msg.role === "tool" && msg.tool_call_id) {
+        return {
+          role: "tool",
+          tool_call_id: msg.tool_call_id,
+          content: msg.content,
+        };
+      }
+
+      // Legacy function result format
+      if (msg.role === "function" && msg.name) {
+        return {
+          role: "function",
+          name: msg.name,
+          content: msg.content,
+        };
+      }
+
+      // Standard user/assistant messages
+      return {
         role: msg.role,
         content: msg.content,
       };
-
-      // Add name for function messages
-      if (msg.role === "function" && msg.name) {
-        formatted.name = msg.name;
-      }
-
-      return formatted;
     });
   }
 }

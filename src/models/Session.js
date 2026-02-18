@@ -22,14 +22,19 @@ const sessionSchema = new mongoose.Schema({
     {
       role: {
         type: String,
-        enum: ["user", "assistant", "system", "function"],
+        enum: ["user", "assistant", "system", "function", "tool"],
         required: true,
       },
       content: {
         type: String,
-        required: true,
+        required: false,
+        default: null,
       },
       name: String,
+      tool_calls: {
+        type: mongoose.Schema.Types.Mixed,
+      },
+      tool_call_id: String,
       timestamp: {
         type: Date,
         default: Date.now,

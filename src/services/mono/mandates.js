@@ -37,6 +37,12 @@ class MonoMandatesService {
       // Mono rejects amount: 0; use a reasonable default (₦500,000 = 50000000 kobo).
       const mandateAmount = amount || 50000000;
 
+      // Mono requires reference to be alphanumeric only (no underscores/hyphens)
+      const safeReference = (reference || `ref${Date.now()}`).replace(
+        /[^a-zA-Z0-9]/g,
+        "",
+      );
+
       const payload = {
         amount: mandateAmount,
         type: "recurring-debit",
@@ -44,7 +50,7 @@ class MonoMandatesService {
         mandate_type: mandateType,
         debit_type: debitType,
         description: description || "Eureka AI Mandate Setup",
-        reference: reference || `ref_${Date.now()}`,
+        reference: safeReference,
         redirect_url:
           redirectUrl ||
           process.env.MONO_REDIRECT_URL ||
@@ -54,7 +60,7 @@ class MonoMandatesService {
         end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
           .toISOString()
           .split("T")[0],
-        meta: {},
+        meta: { source: "eureka" },
       };
 
       console.log("📤 Mandate initiation payload:", JSON.stringify(payload, null, 2));
@@ -109,19 +115,24 @@ class MonoMandatesService {
         throw new Error("Mono customer ID is required to create a mandate");
       }
 
+      const safeReference = (reference || `mandate${Date.now()}`).replace(
+        /[^a-zA-Z0-9]/g,
+        "",
+      );
+
       const payload = {
         debit_type: debitType,
         customer: customerId,
         mandate_type: mandateType,
         amount,
-        reference: reference || `mandate_${Date.now()}`,
+        reference: safeReference,
         description: description || "Eureka AI Transfer Mandate",
         fee_bearer: feeBearer,
         start_date: new Date().toISOString().split("T")[0],
-        end_date: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000)
+        end_date: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
           .toISOString()
           .split("T")[0],
-        meta: {},
+        meta: { source: "eureka" },
       };
 
       if (accountNumber) payload.account_number = accountNumber;

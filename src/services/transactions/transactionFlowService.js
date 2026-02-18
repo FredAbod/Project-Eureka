@@ -242,7 +242,7 @@ class TransactionFlowService {
     }
 
     // 5. Execute Debit
-    const debitReference = `trn_${Date.now()}_${userId.toString().slice(-4)}`;
+    const debitReference = `trn${Date.now()}${userId.toString().slice(-4)}`;
     const debitResult = await monoService.debitMandate(
       sourceAccount.mandateId,
       amountKobo,
@@ -314,7 +314,7 @@ class TransactionFlowService {
     const mandateResult = await monoService.initiateMandate({
       customerId: sourceAccount.monoCustomerId,
       description: "Eureka Transfer Authorization",
-      reference: `auth_${Date.now()}_${user._id.toString().slice(-4)}`,
+      reference: `auth${Date.now()}${user._id.toString().slice(-4)}`,
     });
 
     if (mandateResult.success) {

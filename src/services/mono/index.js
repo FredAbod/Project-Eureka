@@ -35,6 +35,9 @@ class MonoServiceFacade {
   initiateReauth(accountId, redirectUrl, ref) {
     return this.auth.initiateReauth(accountId, redirectUrl, ref);
   }
+  updateCustomer(customerId, updates) {
+    return this.auth.updateCustomer(customerId, updates);
+  }
 
   // --- Accounts ---
   getAccountDetails(accountId) {

@@ -5,6 +5,10 @@ const bankService = require('./bankService');
 const aiService = require('./aiService');
 const conversationService = require('./conversationService');
 const accountConnectionService = require('./accountConnectionService');
+const monoService = require('./monoService');
+const BankAccount = require('../models/BankAccount');
+const User = require('../models/User');
+const bankLookupService = require('./bankLookupService');
 
 // Rate limiting per user
 const userRequestCounts = new Map();
@@ -246,6 +250,69 @@ async function executeFunctionCall(aiResponse, session, conversationHistory, pho
         
         result = connectionResult;
         break;
+
+      case 'disconnect_account': {
+        const activeAccounts = await BankAccount.find({
+          userId: session.userId,
+          isActive: true,
+        });
+
+        if (!activeAccounts.length) {
+          result = { success: false, message: "You don't have any connected bank account to disconnect." };
+          break;
+        }
+
+        let accountToUnlink = null;
+        if (args && args.bank_name) {
+          const bank = bankLookupService.findBankByName(args.bank_name);
+          const bankCode = bank ? bank.code : null;
+          accountToUnlink = activeAccounts.find(
+            (a) =>
+              a.bankCode === bankCode ||
+              a.bankName.toLowerCase().includes(String(args.bank_name).toLowerCase()),
+          );
+          if (!accountToUnlink && activeAccounts.length === 1) {
+            accountToUnlink = activeAccounts[0];
+          }
+        } else if (activeAccounts.length === 1) {
+          accountToUnlink = activeAccounts[0];
+        } else {
+          result = {
+            success: false,
+            message: "You have more than one account connected. Please specify which bank to disconnect (e.g. 'disconnect Opay').",
+            accounts: activeAccounts.map((a) => ({ bankName: a.bankName, id: a._id.toString() })),
+          };
+          break;
+        }
+
+        if (!accountToUnlink) {
+          result = {
+            success: false,
+            message: `I couldn't find a connected account for "${args.bank_name}". Your connected banks are: ${activeAccounts.map((a) => a.bankName).join(', ')}.`,
+          };
+          break;
+        }
+
+        const unlinkResult = await monoService.unlinkAccount(accountToUnlink.monoAccountId);
+        if (!unlinkResult.success) {
+          result = { success: false, message: unlinkResult.error || 'Failed to disconnect account. Please try again.' };
+          break;
+        }
+
+        accountToUnlink.isActive = false;
+        await accountToUnlink.save();
+        await User.updateOne(
+          { _id: session.userId },
+          { $pull: { linkedAccounts: accountToUnlink._id } },
+        );
+
+        result = {
+          success: true,
+          message: `${accountToUnlink.bankName} has been disconnected successfully.`,
+          bankName: accountToUnlink.bankName,
+        };
+        break;
+      }
 
       case 'check_balance':
         // Check if account is connected first

@@ -311,11 +311,51 @@ class TransactionFlowService {
       };
     }
 
-    const mandateResult = await monoService.initiateMandate({
+    // Try to initiate mandate
+    let mandateResult = await monoService.initiateMandate({
       customerId: sourceAccount.monoCustomerId,
       description: "Eureka Transfer Authorization",
       reference: `auth${Date.now()}${user._id.toString().slice(-4)}`,
     });
+
+    // If mandate fails due to missing phone/address, update customer and retry
+    if (
+      !mandateResult.success &&
+      mandateResult.error &&
+      mandateResult.error.includes("Phone number and address are required")
+    ) {
+      console.log(
+        "⚠️ Customer missing phone/address. Updating customer record...",
+      );
+
+      const updateResult = await monoService.updateCustomer(
+        sourceAccount.monoCustomerId,
+        {
+          phone: user.phoneNumber,
+          address: "Lagos, Nigeria", // TODO: Get from user profile or bank account
+        },
+      );
+
+      if (updateResult.success) {
+        console.log("✅ Customer updated. Retrying mandate initiation...");
+        // Retry mandate initiation
+        mandateResult = await monoService.initiateMandate({
+          customerId: sourceAccount.monoCustomerId,
+          description: "Eureka Transfer Authorization",
+          reference: `auth${Date.now()}${user._id.toString().slice(-4)}`,
+        });
+      } else {
+        console.error("❌ Failed to update customer:", updateResult.error);
+        // If update fails, user needs to re-link account to create new customer with phone/address
+        return {
+          success: true,
+          data: {
+            response:
+              "To enable transfers, please re-link your bank account. This will update your account information. Say 'connect account' to get started.",
+          },
+        };
+      }
+    }
 
     if (mandateResult.success) {
       sourceAccount.mandateReference = mandateResult.reference;

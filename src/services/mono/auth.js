@@ -73,6 +73,32 @@ class MonoAuthService {
   }
 
   /**
+   * Update customer information
+   * @param {string} customerId - Mono customer ID
+   * @param {Object} updates - { name?, email?, phone?, address? }
+   */
+  async updateCustomer(customerId, updates) {
+    try {
+      const payload = {};
+      if (updates.name) payload.name = updates.name;
+      if (updates.email) payload.email = updates.email;
+      if (updates.phone) payload.phone = updates.phone;
+      if (updates.address) payload.address = updates.address;
+
+      const data = await monoClient.request(`/customers/${customerId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+
+      console.log("✅ Customer updated:", customerId);
+      return { success: true, customer: data.data };
+    } catch (error) {
+      console.error("❌ Customer update failed:", error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
    * Initiate account reauthorization
    * @param {string} accountId
    * @param {string} redirectUrl

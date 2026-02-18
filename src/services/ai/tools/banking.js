@@ -32,6 +32,25 @@ const getBankingTools = () => [
   {
     type: "function",
     function: {
+      name: "disconnect_account",
+      description:
+        "Disconnect or unlink a bank account. Use when user says they want to disconnect, unlink, or remove their bank account. If user specifies a bank (e.g. 'disconnect Opay'), pass bank_name; otherwise omit to disconnect the only connected account or ask which one.",
+      parameters: {
+        type: "object",
+        properties: {
+          bank_name: {
+            type: "string",
+            description:
+              "Optional. Name of the bank to disconnect (e.g. 'Opay', 'Kuda'). Omit if user has one account or said 'disconnect my account' without specifying.",
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "get_all_accounts",
       description:
         "Get list of all connected bank accounts with their individual balances. Use when user asks to see their accounts or wants to know which banks are connected.",

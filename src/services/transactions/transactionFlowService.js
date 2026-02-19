@@ -132,8 +132,8 @@ class TransactionFlowService {
       logBankingOperation({
         userId,
         phoneNumber,
-        action: "transfer_cancelled",
-        amount: pending.arguments.amount,
+        action: pending.type === "overdraft_confirm" ? "overdraft_transfer_cancelled" : "transfer_cancelled",
+        amount: pending.arguments?.amount,
         status: "cancelled",
         ip,
       });
@@ -155,7 +155,14 @@ class TransactionFlowService {
       normalized === "yes" ||
       normalized === "y"
     ) {
-      return await this.executeTransfer(pending, phoneNumber, ip, userId);
+      const overdraftConfirmed = pending.type === "overdraft_confirm";
+      return await this.executeTransfer(
+        pending,
+        phoneNumber,
+        ip,
+        userId,
+        overdraftConfirmed ? { overdraftConfirmed: true } : {},
+      );
     }
 
     // INVALID INPUT
@@ -172,9 +179,11 @@ class TransactionFlowService {
 
   /**
    * Execute the transfer after confirmation
+   * @param {Object} pending - pendingTransaction from session
+   * @param {Object} [options] - { overdraftConfirmed: true } when user confirmed proceed despite low/negative balance
    * @private
    */
-  async executeTransfer(pending, phoneNumber, ip, userId) {
+  async executeTransfer(pending, phoneNumber, ip, userId, options = {}) {
     const {
       recipient_account_number,
       recipient_bank_code,
@@ -237,34 +246,88 @@ class TransactionFlowService {
       return await this.handleMissingMandate(sourceAccount, user, phoneNumber);
     }
 
-    // 4. Verify Balance
+    // 4. Verify Balance (skip if user already confirmed overdraft)
     const amountKobo = amount * 100;
-    const balanceCheck = await monoService.verifyMandateBalance(
-      sourceAccount.mandateId,
-      amountKobo,
-    );
+    if (!options.overdraftConfirmed) {
+      let balanceCheck = await monoService.verifyMandateBalance(
+        sourceAccount.mandateId,
+        amountKobo,
+      );
 
-    const mandateNotReady = (err) =>
-      err && /not ready for use|try again in 5|wait.*minutes/i.test(String(err));
+      const mandateNotReady = (err) =>
+        err && /not ready for use|try again in 5|wait.*minutes/i.test(String(err));
 
-    if (!balanceCheck.success && balanceCheck.error) {
-      const errMsg = balanceCheck.error;
-      let msg;
-      if (mandateNotReady(errMsg)) {
-        msg = "Your authorization just went through. The bank needs a few minutes before we can process the transfer. Please try again in about 5 minutes.";
-      } else if (/could not fetch|try again later|500/i.test(errMsg)) {
-        msg = "We couldn't check your balance right now. Please try again in a moment.";
-      } else {
-        msg = `Could not verify balance: ${errMsg}`;
+      if (!balanceCheck.success && balanceCheck.error) {
+        const errMsg = balanceCheck.error;
+        if (mandateNotReady(errMsg)) {
+          const msg =
+            "Your authorization just went through. The bank needs a few minutes before we can process the transfer. Please try again in about 5 minutes.";
+          await conversationService.addAssistantMessage(phoneNumber, `⏳ ${msg}`);
+          return { success: true, data: { response: `⏳ ${msg}` } };
+        }
+        if (/could not fetch|try again later|500/i.test(errMsg)) {
+          // Fallback: use same linked-account balance API as "what's my balance" (balance in kobo)
+          if (sourceAccount.monoAccountId) {
+            const accountBalance = await monoService.getBalance(
+              sourceAccount.monoAccountId,
+            );
+            if (accountBalance.success && accountBalance.balance != null) {
+              const balanceKobo = Number(accountBalance.balance);
+              const sufficient = balanceKobo >= amountKobo;
+              const balanceNaira = balanceKobo / 100;
+              if (!sufficient) {
+                return await this.askOverdraftConfirmation(
+                  phoneNumber,
+                  {
+                    recipient_account_number,
+                    recipient_bank_code,
+                    recipient_name,
+                    amount,
+                  },
+                  balanceNaira,
+                  bankName,
+                  verifiedRecipientName,
+                );
+              }
+              balanceCheck = { success: true, hasSufficientBalance: true };
+            }
+          }
+          if (!balanceCheck.success) {
+            const msg =
+              "We couldn't check your balance via the transfer channel right now. Ask me \"what's my balance\" to see your balance; you can try the transfer again in a moment.";
+            await conversationService.addAssistantMessage(phoneNumber, `⏳ ${msg}`);
+            return { success: true, data: { response: `⏳ ${msg}` } };
+          }
+        } else {
+          const msg = `Could not verify balance: ${errMsg}`;
+          await conversationService.addAssistantMessage(phoneNumber, `⏳ ${msg}`);
+          return { success: true, data: { response: `⏳ ${msg}` } };
+        }
       }
-      await conversationService.addAssistantMessage(phoneNumber, `⏳ ${msg}`);
-      return { success: true, data: { response: `⏳ ${msg}` } };
-    }
 
-    if (balanceCheck.hasSufficientBalance === false) {
-      const msg = `❌ Insufficient funds. Your balance is too low.`;
-      await conversationService.addAssistantMessage(phoneNumber, msg);
-      return { success: true, data: { response: msg } };
+      if (balanceCheck.hasSufficientBalance === false) {
+        let balanceNaira = null;
+        if (sourceAccount.monoAccountId) {
+          const accountBalance = await monoService.getBalance(
+            sourceAccount.monoAccountId,
+          );
+          if (accountBalance.success && accountBalance.balance != null) {
+            balanceNaira = Number(accountBalance.balance) / 100;
+          }
+        }
+        return await this.askOverdraftConfirmation(
+          phoneNumber,
+          {
+            recipient_account_number,
+            recipient_bank_code,
+            recipient_name,
+            amount,
+          },
+          balanceNaira,
+          bankName,
+          verifiedRecipientName,
+        );
+      }
     }
 
     // 5. Execute Debit (Mono requires beneficiary.nip_code to be 6+ chars)
@@ -317,6 +380,46 @@ class TransactionFlowService {
         response: responseText,
         timestamp: new Date().toISOString(),
         requiresConfirmation: false,
+      },
+    };
+  }
+
+  /**
+   * Ask user to confirm proceeding when balance is low or negative (e.g. overdraft account).
+   * Sets pendingTransaction type 'overdraft_confirm' so next "yes" runs the transfer with overdraftConfirmed.
+   */
+  async askOverdraftConfirmation(
+    phoneNumber,
+    args,
+    balanceNaira,
+    bankName,
+    recipientDisplay,
+  ) {
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    await sessionRepo.updateSession(phoneNumber, {
+      pendingTransaction: {
+        type: "overdraft_confirm",
+        arguments: args,
+        balanceNaira,
+        expiresAt,
+      },
+    });
+
+    const toName = recipientDisplay || args.recipient_name || `Account ${args.recipient_account_number}`;
+    const balanceText =
+      balanceNaira != null
+        ? `Your current balance is ₦${Number(balanceNaira).toLocaleString("en-NG", { minimumFractionDigits: 2 })}. `
+        : "Your balance may be below the transfer amount. ";
+    const msg =
+      `${balanceText}This might be an overdraft account. Do you still want to proceed with the transfer of ₦${Number(args.amount).toLocaleString()} to ${toName} at ${bankName}? Reply *Yes* to proceed or *No* to cancel.`;
+
+    await conversationService.addAssistantMessage(phoneNumber, msg);
+    return {
+      success: true,
+      data: {
+        response: msg,
+        timestamp: new Date().toISOString(),
+        requiresConfirmation: true,
       },
     };
   }

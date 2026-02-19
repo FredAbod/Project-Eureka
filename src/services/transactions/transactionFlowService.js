@@ -249,9 +249,14 @@ class TransactionFlowService {
 
     if (!balanceCheck.success && balanceCheck.error) {
       const errMsg = balanceCheck.error;
-      const msg = mandateNotReady(errMsg)
-        ? "Your authorization just went through. The bank needs a few minutes before we can process the transfer. Please try again in about 5 minutes."
-        : `Could not verify balance: ${errMsg}`;
+      let msg;
+      if (mandateNotReady(errMsg)) {
+        msg = "Your authorization just went through. The bank needs a few minutes before we can process the transfer. Please try again in about 5 minutes.";
+      } else if (/could not fetch|try again later|500/i.test(errMsg)) {
+        msg = "We couldn't check your balance right now. Please try again in a moment.";
+      } else {
+        msg = `Could not verify balance: ${errMsg}`;
+      }
       await conversationService.addAssistantMessage(phoneNumber, `⏳ ${msg}`);
       return { success: true, data: { response: `⏳ ${msg}` } };
     }
@@ -262,7 +267,8 @@ class TransactionFlowService {
       return { success: true, data: { response: msg } };
     }
 
-    // 5. Execute Debit
+    // 5. Execute Debit (Mono requires beneficiary.nip_code to be 6+ chars)
+    const nipCode = await monoService.getNipCodeForBankCode(recipient_bank_code);
     const debitReference = `trn${Date.now()}${userId.toString().slice(-4)}`;
     const debitResult = await monoService.debitMandate(
       sourceAccount.mandateId,
@@ -272,6 +278,7 @@ class TransactionFlowService {
       {
         accountNumber: recipient_account_number,
         bankCode: recipient_bank_code,
+        nipCode: nipCode || String(recipient_bank_code).padStart(6, "0"),
       },
     );
 

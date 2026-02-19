@@ -66,6 +66,12 @@ class MonoServiceFacade {
   getBanks() {
     return this.lookup.getBanks();
   }
+  getBanksListV3() {
+    return this.lookup.getBanksListV3();
+  }
+  getNipCodeForBankCode(bankCode) {
+    return this.lookup.getNipCodeForBankCode(bankCode);
+  }
   lookupBankAccount(acc, bank) {
     return this.lookup.lookupBankAccount(acc, bank);
   }

@@ -254,9 +254,14 @@ class MonoMandatesService {
       };
 
       if (beneficiary) {
+        const nuban = beneficiary.accountNumber || beneficiary.nuban;
+        let nipCode = beneficiary.nipCode || beneficiary.nip_code || beneficiary.bankCode;
+        if (nipCode != null && String(nipCode).length < 6) {
+          nipCode = String(nipCode).trim().padStart(6, "0");
+        }
         payload.beneficiary = {
-          nuban: beneficiary.accountNumber || beneficiary.nuban,
-          nip_code: beneficiary.bankCode || beneficiary.nipCode,
+          nuban,
+          nip_code: nipCode != null ? String(nipCode) : undefined,
         };
       }
 

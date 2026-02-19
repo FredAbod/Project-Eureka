@@ -248,14 +248,14 @@ class TransactionFlowService {
 
     // 4. Verify Balance (skip if user already confirmed overdraft)
     const amountKobo = amount * 100;
+    const mandateNotReady = (err) =>
+      err && /not ready for use|try again in 5|wait.*minutes/i.test(String(err));
+
     if (!options.overdraftConfirmed) {
       let balanceCheck = await monoService.verifyMandateBalance(
         sourceAccount.mandateId,
         amountKobo,
       );
-
-      const mandateNotReady = (err) =>
-        err && /not ready for use|try again in 5|wait.*minutes/i.test(String(err));
 
       if (!balanceCheck.success && balanceCheck.error) {
         const errMsg = balanceCheck.error;
@@ -347,9 +347,16 @@ class TransactionFlowService {
 
     if (!debitResult.success) {
       const errMsg = debitResult.error || "Unknown error";
-      const msg = mandateNotReady(errMsg)
-        ? "Your authorization just went through. The bank needs a few minutes before we can process the transfer. Please try again in about 5 minutes."
-        : `Transfer failed: ${errMsg}`;
+      let msg;
+      if (mandateNotReady(errMsg)) {
+        msg =
+          "Your authorization just went through. The bank needs a few minutes before we can process the transfer. Please try again in about 5 minutes.";
+      } else if (/beneficiary.*not enabled|contact support/i.test(errMsg)) {
+        msg =
+          "Transfers to other bank accounts are not enabled for this business yet. Please contact support or Mono to enable the beneficiary transfer feature.";
+      } else {
+        msg = `Transfer failed: ${errMsg}`;
+      }
       const displayMsg = mandateNotReady(errMsg) ? `⏳ ${msg}` : `❌ ${msg}`;
       await conversationService.addAssistantMessage(phoneNumber, displayMsg);
       return { success: true, data: { response: displayMsg } };

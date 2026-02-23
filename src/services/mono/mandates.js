@@ -263,7 +263,16 @@ class MonoMandatesService {
           nuban,
           nip_code: nipCode != null ? String(nipCode) : undefined,
         };
+        console.log(
+          "[Mono debit] beneficiary payload:",
+          JSON.stringify(payload.beneficiary),
+        );
       }
+
+      console.log(
+        "[Mono debit] full payload:",
+        JSON.stringify({ ...payload, beneficiary: payload.beneficiary }),
+      );
 
       const data = await monoClient.request(
         `https://api.withmono.com/v3/payments/mandates/${mandateId}/debit`,

@@ -47,10 +47,19 @@ class MonoLookupService {
         String(b.bank_code || b.code || "").trim() === code ||
         String(b.bank_code || b.code || "").trim() === code.padStart(3, "0"),
     );
+    let nipCode;
     if (bank && (bank.nip_code || bank.nipCode)) {
-      return String(bank.nip_code || bank.nipCode).trim();
+      nipCode = String(bank.nip_code || bank.nipCode).trim();
+      console.log(
+        `[Mono nip_code] bank_code=${code} -> nip_code=${nipCode} (from Mono list: ${bank.name || "?"})`,
+      );
+    } else {
+      nipCode = code.padStart(6, "0");
+      console.log(
+        `[Mono nip_code] bank_code=${code} -> nip_code=${nipCode} (fallback, bank not in Mono list)`,
+      );
     }
-    return code.padStart(6, "0");
+    return nipCode;
   }
 
   /**

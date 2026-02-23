@@ -538,17 +538,23 @@ class TransactionFlowService {
 
     // 5. Execute Debit (Mono requires beneficiary.nip_code to be 6+ chars)
     const nipCode = await monoService.getNipCodeForBankCode(recipient_bank_code);
+    const beneficiaryPayload = {
+      accountNumber: recipient_account_number,
+      bankCode: recipient_bank_code,
+      nipCode: nipCode || String(recipient_bank_code).padStart(6, "0"),
+    };
+    console.log("[Transfer] Debit beneficiary:", {
+      nuban: beneficiaryPayload.accountNumber,
+      bank_code: beneficiaryPayload.bankCode,
+      nip_code: beneficiaryPayload.nipCode,
+    });
     const debitReference = `trn${Date.now()}${userId.toString().slice(-4)}`;
     const debitResult = await monoService.debitMandate(
       sourceAccount.mandateId,
       amountKobo,
       debitReference,
       `Transfer to ${verifiedRecipientName}`,
-      {
-        accountNumber: recipient_account_number,
-        bankCode: recipient_bank_code,
-        nipCode: nipCode || String(recipient_bank_code).padStart(6, "0"),
-      },
+      beneficiaryPayload,
     );
 
     if (!debitResult.success) {

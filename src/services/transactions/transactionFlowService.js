@@ -14,7 +14,14 @@ class TransactionFlowService {
   /**
    * Initiate a transfer request and set up pending state
    */
-  async createTransferRequest(session, args, phoneNumber, ip, userId) {
+  async createTransferRequest(
+    session,
+    args,
+    phoneNumber,
+    ip,
+    userId,
+    fromAccountId = null,
+  ) {
     const {
       recipient_account_number,
       recipient_bank_code,
@@ -51,7 +58,96 @@ class TransactionFlowService {
       };
     }
 
-    // Create pending state
+    // Determine source account when user has multiple accounts
+    // Prefer explicit from_account_id (from tool args) when provided
+    let sourceAccountId = fromAccountId || args.from_account_id || null;
+    const activeAccounts = await BankAccount.find({
+      userId,
+      isActive: true,
+    }).sort({ isPrimary: -1, createdAt: -1 });
+
+    if (!activeAccounts || activeAccounts.length === 0) {
+      return {
+        success: true,
+        data: {
+          response:
+            "You don't have any active bank accounts linked yet. Please link an account first.",
+          timestamp: new Date().toISOString(),
+          requiresConfirmation: false,
+        },
+      };
+    }
+
+    if (sourceAccountId) {
+      const match = activeAccounts.find(
+        (acc) => acc._id.toString() === String(sourceAccountId),
+      );
+      if (!match) {
+        return {
+          success: true,
+          data: {
+            response:
+              "I couldn't find the bank account you selected. Please choose one of your active accounts.",
+            timestamp: new Date().toISOString(),
+            requiresConfirmation: false,
+          },
+        };
+      }
+      // Persist the chosen source account on the arguments
+      args.from_account_id = match._id.toString();
+    } else if (activeAccounts.length === 1) {
+      // Only one active account – use it implicitly but record it for executeTransfer
+      args.from_account_id = activeAccounts[0]._id.toString();
+    } else {
+      // Multiple active accounts and no explicit choice -> ask the user to pick
+      const accountOptions = activeAccounts.map((acc) => ({
+        id: acc._id.toString(),
+        bankName: acc.bankName || "Bank account",
+        last4:
+          acc.accountNumber && acc.accountNumber.length >= 4
+            ? acc.accountNumber.slice(-4)
+            : "****",
+      }));
+
+      const pendingTransaction = {
+        type: "choose_source_account",
+        arguments: args,
+        accounts: accountOptions,
+        expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+      };
+
+      await sessionRepo.updateSession(phoneNumber, { pendingTransaction });
+
+      const listText = accountOptions
+        .map(
+          (opt, idx) =>
+            `${idx + 1}) ${opt.bankName} ****${opt.last4} (ID: ${opt.id})`,
+        )
+        .join("\n");
+
+      const msg =
+        "You have multiple connected accounts. Which account should I use as the source for this transfer?\n\n" +
+        listText +
+        "\n\nReply with the number (e.g. 1 or 2), or type \"cancel\" to stop.";
+
+      await conversationService.addAssistantMessage(phoneNumber, msg);
+
+      return {
+        success: true,
+        data: {
+          response: msg,
+          timestamp: new Date().toISOString(),
+          requiresConfirmation: true,
+          pendingAction: {
+            type: "choose_source_account",
+            accounts: accountOptions,
+            expiresIn: 300,
+          },
+        },
+      };
+    }
+
+    // Create pending state for the actual transfer
     const pendingTransaction = {
       type: "transfer",
       arguments: args,
@@ -123,7 +219,104 @@ class TransactionFlowService {
 
     const normalized = text.toLowerCase().trim();
 
-    // CANCEL
+    // Special flow: user choosing which source account to use
+    if (pending.type === "choose_source_account") {
+      // CANCEL
+      if (
+        normalized === "cancel" ||
+        normalized === "no" ||
+        normalized === "n"
+      ) {
+        await sessionRepo.updateSession(phoneNumber, {
+          pendingTransaction: null,
+        });
+
+        logBankingOperation({
+          userId,
+          phoneNumber,
+          action: "source_account_selection_cancelled",
+          status: "cancelled",
+          ip,
+        });
+
+        return {
+          success: true,
+          data: {
+            response:
+              "Okay, I won't proceed with that transfer. Is there anything else I can help you with?",
+            timestamp: new Date().toISOString(),
+            requiresConfirmation: false,
+          },
+        };
+      }
+
+      // Interpret numeric choice (1, 2, 3, ...)
+      const choiceIndex = parseInt(normalized, 10);
+      if (
+        Number.isNaN(choiceIndex) ||
+        choiceIndex < 1 ||
+        choiceIndex > (pending.accounts || []).length
+      ) {
+        return {
+          success: true,
+          data: {
+            response:
+              'Please reply with the number of the account you want to use (e.g. "1" or "2"), or type "cancel" to stop.',
+            timestamp: new Date().toISOString(),
+            requiresConfirmation: true,
+          },
+        };
+      }
+
+      const selected = pending.accounts[choiceIndex - 1];
+      const args = pending.arguments || {};
+
+      // Create a new transfer pending state with the chosen source account
+      const newPending = {
+        type: "transfer",
+        arguments: {
+          ...args,
+          from_account_id: selected.id,
+        },
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      };
+
+      await sessionRepo.updateSession(phoneNumber, {
+        pendingTransaction: newPending,
+      });
+
+      const bank = bankLookupService.getBankByCode(
+        args.recipient_bank_code || args.bank_code,
+      );
+      const destBankName = bank
+        ? bank.name
+        : args.recipient_bank_code || args.bank_name || "the bank";
+
+      const recipientDisplay =
+        args.recipient_name || `Account ${args.recipient_account_number}`;
+      const confirmMessage = `Great — we'll use ${selected.bankName} ****${selected.last4} as the source account.\n\nTransfer ₦${Number(
+        args.amount,
+      ).toLocaleString()} to ${recipientDisplay} at ${destBankName}? Reply "confirm" or "cancel".`;
+
+      return {
+        success: true,
+        data: {
+          response: confirmMessage,
+          timestamp: new Date().toISOString(),
+          requiresConfirmation: true,
+          pendingAction: {
+            type: "transfer",
+            amount: args.amount,
+            recipientName: args.recipient_name,
+            recipientAccount: args.recipient_account_number,
+            recipientBank: destBankName,
+            expiresIn: 300,
+          },
+        },
+      };
+    }
+
+    // CANCEL (normal transfer / overdraft confirmation)
     if (normalized === "cancel" || normalized === "no" || normalized === "n") {
       await sessionRepo.updateSession(phoneNumber, {
         pendingTransaction: null,
@@ -132,7 +325,10 @@ class TransactionFlowService {
       logBankingOperation({
         userId,
         phoneNumber,
-        action: pending.type === "overdraft_confirm" ? "overdraft_transfer_cancelled" : "transfer_cancelled",
+        action:
+          pending.type === "overdraft_confirm"
+            ? "overdraft_transfer_cancelled"
+            : "transfer_cancelled",
         amount: pending.arguments?.amount,
         status: "cancelled",
         ip,
@@ -189,6 +385,7 @@ class TransactionFlowService {
       recipient_bank_code,
       recipient_name,
       amount,
+      from_account_id,
     } = pending.arguments;
 
     // Clear pending state immediately to prevent double execution
@@ -201,10 +398,19 @@ class TransactionFlowService {
     const user = await User.findById(userId);
     if (!user) return { success: true, data: { response: "User not found." } };
 
-    const sourceAccount = await BankAccount.findOne({
-      userId,
-      isActive: true,
-    });
+    let sourceAccount = null;
+    if (from_account_id) {
+      sourceAccount = await BankAccount.findOne({
+        _id: from_account_id,
+        userId,
+        isActive: true,
+      });
+    } else {
+      sourceAccount = await BankAccount.findOne({
+        userId,
+        isActive: true,
+      });
+    }
 
     if (!sourceAccount) {
       return {

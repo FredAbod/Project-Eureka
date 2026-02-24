@@ -250,7 +250,7 @@ class MonoMandatesService {
         amount,
         reference,
         narration: narration || "Transfer",
-        fee_bearer: "customer",
+        // fee_bearer omitted so Mono uses the business default
       };
 
       if (beneficiary) {

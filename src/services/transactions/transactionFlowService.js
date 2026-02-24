@@ -574,6 +574,15 @@ class TransactionFlowService {
       } else if (/beneficiary.*not enabled|contact support/i.test(errMsg)) {
         msg =
           "Transfers to other bank accounts are not enabled for this business yet. Please contact support or Mono to enable the beneficiary transfer feature.";
+      } else if (/Amount must not be less than\s+(\d+)/i.test(errMsg)) {
+        // Mono returns minimum in kobo (e.g. 20000). Convert to Naira for the user.
+        const match = errMsg.match(/Amount must not be less than\s+(\d+)/i);
+        const rawMin = match ? Number(match[1]) : NaN;
+        const minNaira = !Number.isNaN(rawMin) ? rawMin / 100 : 200;
+        msg = `The minimum amount Mono allows for this debit is ₦${minNaira.toLocaleString("en-NG", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 2,
+        })}. Please enter at least that amount.`;
       } else {
         msg = `Transfer failed: ${errMsg}`;
       }

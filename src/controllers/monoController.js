@@ -1180,6 +1180,52 @@ async function processMonoWebhook(event, data) {
         break;
       }
 
+      case "events.mandates.debit.successful": {
+        console.log("📥 Mandate debit successful webhook received:", data);
+        const mandateId = data.mandate || data.data?.mandate || data.id;
+        const amountKobo = data.amount || data.data?.amount;
+        const customerId = data.customer || data.data?.customer;
+
+        // Try to find the source BankAccount by mandateId or customerId
+        let bankAccount = null;
+        if (mandateId) {
+          bankAccount = await BankAccount.findOne({
+            mandateId,
+            isActive: true,
+          });
+        }
+        if (!bankAccount && customerId) {
+          bankAccount = await BankAccount.findOne({
+            monoCustomerId: customerId,
+            isActive: true,
+          });
+        }
+
+        if (bankAccount && bankAccount.userId) {
+          const user = await User.findById(bankAccount.userId);
+          if (user && user.phoneNumber) {
+            const amountNaira =
+              typeof amountKobo === "number" ? amountKobo / 100 : null;
+            const prettyAmount = amountNaira
+              ? `₦${amountNaira.toLocaleString("en-NG", {
+                  minimumFractionDigits: 0,
+                  maximumFractionDigits: 2,
+                })}`
+              : "Your transfer";
+
+            await whatsappService.sendMessage(
+              user.phoneNumber,
+              `✅ *Direct Debit Successful*\n\n${prettyAmount} was debited successfully via your mandate.\n\nIf you didn't authorize this, please contact support immediately.`,
+            );
+          }
+        } else {
+          console.log(
+            "ℹ️ Mandate debit success webhook received but no matching active bank account was found.",
+          );
+        }
+        break;
+      }
+
       default:
         console.log(`ℹ️ Unhandled Mono webhook event: ${event}`);
     }

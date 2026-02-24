@@ -536,12 +536,20 @@ class TransactionFlowService {
       }
     }
 
-    // 5. Execute Debit (Mono requires beneficiary.nip_code to be 6+ chars)
-    const nipCode = await monoService.getNipCodeForBankCode(recipient_bank_code);
+    // 5. Execute Debit (Mono requires beneficiary.nip_code to be correct NIP code, not bank_code)
+    const nipCode = await monoService.getNipCodeForBankCode(
+      recipient_bank_code,
+    );
+    if (!nipCode) {
+      const msg =
+        "I couldn't find the transfer routing (NIP code) for this destination bank. This bank might not support direct debit to beneficiary accounts yet. Please contact support or try a different bank.";
+      await conversationService.addAssistantMessage(phoneNumber, msg);
+      return { success: true, data: { response: msg } };
+    }
     const beneficiaryPayload = {
       accountNumber: recipient_account_number,
       bankCode: recipient_bank_code,
-      nipCode: nipCode || String(recipient_bank_code).padStart(6, "0"),
+      nipCode,
     };
     console.log("[Transfer] Debit beneficiary:", {
       nuban: beneficiaryPayload.accountNumber,

@@ -36,30 +36,41 @@ class MonoLookupService {
   /**
    * Resolve bank_code (e.g. "011") to nip_code (6+ chars) for Mono debit beneficiary.
    * @param {string} bankCode - CBN/bank code (e.g. "011", "044")
-   * @returns {Promise<string>} nip_code (e.g. "000011") or bankCode zero-padded to 6 chars as fallback
+   * @returns {Promise<string|null>} nip_code string or null if not found
    */
   async getNipCodeForBankCode(bankCode) {
-    if (!bankCode || typeof bankCode !== "string") return bankCode;
+    if (!bankCode || typeof bankCode !== "string") return null;
     const code = String(bankCode).trim();
+    const code3 = code.padStart(3, "0");
+
+    // Mono support explicitly confirmed First Bank (011) uses nip_code 000016.
+    // Hard-code this override to avoid ever sending an incorrect nip_code fallback.
+    if (code3 === "011") {
+      const nipCode = "000016";
+      console.log(
+        `[Mono nip_code] bank_code=${code3} -> nip_code=${nipCode} (override for First Bank, per Mono support)`,
+      );
+      return nipCode;
+    }
+
     const banks = await this.getBanksListV3();
     const bank = banks.find(
       (b) =>
         String(b.bank_code || b.code || "").trim() === code ||
-        String(b.bank_code || b.code || "").trim() === code.padStart(3, "0"),
+        String(b.bank_code || b.code || "").trim() === code3,
     );
-    let nipCode;
     if (bank && (bank.nip_code || bank.nipCode)) {
-      nipCode = String(bank.nip_code || bank.nipCode).trim();
+      const nipCode = String(bank.nip_code || bank.nipCode).trim();
       console.log(
-        `[Mono nip_code] bank_code=${code} -> nip_code=${nipCode} (from Mono list: ${bank.name || "?"})`,
+        `[Mono nip_code] bank_code=${code3} -> nip_code=${nipCode} (from Mono list: ${bank.name || "?"})`,
       );
-    } else {
-      nipCode = code.padStart(6, "0");
-      console.log(
-        `[Mono nip_code] bank_code=${code} -> nip_code=${nipCode} (fallback, bank not in Mono list)`,
-      );
+      return nipCode;
     }
-    return nipCode;
+
+    console.warn(
+      `[Mono nip_code] No nip_code found in Mono list for bank_code=${code3}. Returning null to avoid sending an invalid beneficiary nip_code.`,
+    );
+    return null;
   }
 
   /**

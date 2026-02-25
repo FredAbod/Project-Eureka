@@ -49,9 +49,7 @@ async function processMessage(params) {
     // Fetch user info for personalized responses
     const user = await User.findById(userId).select("name").lean();
     const firstName = user?.name ? user.name.split(" ")[0] : null;
-    const userContext = firstName
-      ? { firstName, name: user.name }
-      : null;
+    const userContext = firstName ? { firstName, name: user.name } : null;
 
     // Add user message to history
     await conversationService.addUserMessage(phoneNumber, message);
@@ -227,7 +225,8 @@ async function executeFunctionCall(
           result = {
             success: false,
             message:
-              unlinkResult.error || "Failed to disconnect account. Please try again.",
+              unlinkResult.error ||
+              "Failed to disconnect account. Please try again.",
           };
           break;
         }
@@ -300,7 +299,11 @@ async function executeFunctionCall(
             },
           };
         }
-        const txs = await bankService.getTransactionsForUser(userId);
+        const days = args.days || 7;
+        const txLimit = Math.min(days * 3, 50);
+        const txs = await bankService.getTransactionsForUser(userId, {
+          limit: txLimit,
+        });
         if (!txs || txs.length === 0) {
           return {
             success: true,
@@ -310,7 +313,7 @@ async function executeFunctionCall(
             },
           };
         }
-        result = { transactions: txs.slice(0, 10) };
+        result = { transactions: txs };
 
         logBankingOperation({
           userId,

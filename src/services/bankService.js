@@ -137,8 +137,17 @@ class BankService {
         }
       }
 
+      // Deduplicate transactions (same narration + amount + type + date = duplicate)
+      const seen = new Set();
+      const uniqueTransactions = allTransactions.filter((tx) => {
+        const key = `${tx.narration || tx.description}_${tx.amount}_${tx.type}_${tx.date}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
       // Sort by date descending and limit
-      return allTransactions
+      return uniqueTransactions
         .sort((a, b) => new Date(b.date) - new Date(a.date))
         .slice(0, limit);
     } catch (error) {

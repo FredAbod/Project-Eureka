@@ -22,7 +22,9 @@ class MonoLookupService {
         "https://api.withmono.com/v3/banks/list",
         { method: "GET", headers: monoClient.getV3Headers() },
       );
-      const list = data.data?.banks ?? data.banks ?? [];
+      const list = Array.isArray(data.data)
+        ? data.data
+        : (data.data?.banks ?? data.banks ?? []);
       v3BanksCache = Array.isArray(list) ? list : [];
       v3BanksCacheTime = Date.now();
       return v3BanksCache;
